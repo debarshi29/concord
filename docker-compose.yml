@@ -1,0 +1,44 @@
+x-app: &app
+  build: .
+  environment:
+    RECONCILER_DATABASE_URL: postgresql://postgres:postgres@db:5432/reconciler
+    RECONCILER_WEBHOOK_SECRET: dev-only-secret-change-me
+  depends_on:
+    db:
+      condition: service_healthy
+
+services:
+  db:
+    image: postgres:16.6
+    environment:
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: reconciler
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d reconciler"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  migrate:
+    <<: *app
+    command: ["reconciler", "migrate"]
+    restart: "no"
+
+  api:
+    <<: *app
+    ports: ["8000:8000"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+  worker:
+    <<: *app
+    command: ["reconciler", "worker"]
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+
+volumes:
+  pgdata:

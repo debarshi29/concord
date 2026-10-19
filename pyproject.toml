@@ -1,0 +1,85 @@
+[project]
+name = "webhook-reconciler"
+version = "1.0.0"
+description = "Idempotent webhook reconciler: exactly-once effects over at-least-once delivery, proven by a chaos harness."
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "fastapi>=0.148.0",
+    "httpx>=0.28.1",
+    "opentelemetry-api>=1.45.1",
+    "opentelemetry-sdk>=1.45.1",
+    "psycopg-pool>=3.3.3",
+    "psycopg[binary]>=3.3.6",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.0",
+    "uvicorn>=0.54.0",
+]
+
+[project.optional-dependencies]
+otlp = ["opentelemetry-exporter-otlp-proto-http>=1.45.1"]
+
+[project.scripts]
+reconciler = "reconciler.cli:main"
+
+[dependency-groups]
+dev = [
+    "hypothesis>=6.170.2",
+    "mutmut>=3.8.0",
+    "mypy>=2.4.0",
+    "pgserver>=0.1.4",
+    "pip-audit>=2.10.1",
+    "pre-commit>=4.7.0",
+    "pytest>=9.1.1",
+    "pytest-cov>=7.1.0",
+    "ruff>=0.17.1",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/reconciler"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+src = ["src", "tests", "bench"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "B", "UP", "SIM", "S", "C4", "PT", "RUF"]
+ignore = ["S608"]  # SQL is built only from constant fragments; see docs/lld.md
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["S101", "S105", "S106"]
+"bench/**" = ["S101", "S311"]
+"src/reconciler/chaos/**" = ["S311"]  # seeded PRNG for reproducible chaos, not crypto
+"src/reconciler/patterns/retry.py" = ["S311"]  # jitter, not crypto
+
+[tool.mypy]
+strict = true
+python_version = "3.12"
+files = ["src", "tests", "bench"]
+plugins = ["pydantic.mypy"]
+
+[[tool.mypy.overrides]]
+module = ["pgserver.*", "mutmut.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts = "-ra --strict-markers"
+markers = [
+    "chaos: long-running chaos permutations (make chaos)",
+    "e2e: end-to-end tests that spawn the CLI",
+]
+
+[tool.coverage.run]
+source = ["src/reconciler"]
+branch = true
+
+[tool.coverage.report]
+fail_under = 90
+show_missing = true
+skip_covered = true
