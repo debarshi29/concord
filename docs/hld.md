@@ -72,14 +72,26 @@ These are the *design targets*; measured values are in the README and `bench/res
 | Consistency | per-aggregate sequential; replica ≡ source within one reconcile interval (default 15 min) |
 | Correctness | duplicate effects = 0; chaos convergence = 100 % |
 
+**Measured (v1.0.0, developer laptop, embedded Postgres 16 — `bench/results/`)**
+
+| Dimension | Target | Measured |
+|---|---|---|
+| Ingestion ack latency p50 / p95 / p99 | 10 / 50 / 150 ms | 2.1 / 2.6 / 2.9 ms (sequential, real HTTP) |
+| Sustained / burst processing | 50 / 500 events/s | 259 events/s on 1 worker; 512 / 579 / 532 on 2 / 4 / 8 |
+| Chaos convergence | 100 % | 1 000 / 1 000 hostile, 1 000 / 1 000 mild |
+| Duplicate effects | 0 | 0 |
+
+The latency measurement is a single sequential client, so it says nothing about tail behaviour under concurrent
+load; the throughput plateau at ~4 workers was not investigated.
+
 ### 5.2 Envelope
 
 * Row size ≈ 1 KB (raw body + payload jsonb + indexes ≈ 2.5 KB). At 50 ev/s: 4.3 M rows/day ≈ **~10 GB/day**
   with indexes if every duplicate is retained → `events` needs a 30-day retention job and time partitioning
   beyond ~1 M events/day (documented extension; v1 ships the purge of idempotency rows only).
 * Idempotency table: one row per applied event, ~150 B; 7 days × 4.3 M ≈ 30 M rows ≈ 4.5 GB worst case.
-* Workers: processing is a few round-trips (~5 ms) → one worker ≈ 100–200 ev/s; peak 500 ev/s ⇒ 3–5 workers;
-  average load needs 1.
+* Workers: processing is a few round-trips; **measured ≈ 260 ev/s per worker** (the estimate made before building
+  was 100–200). Peak 500 ev/s ⇒ 2–3 workers; average load needs 1.
 * **Scale ceiling**: single Postgres primary ≈ low thousands of events/s. Next design: partition `events`
   by `hash(aggregate_id)`, one claim loop per partition, or move the WAL to a log broker (ADR-0004 revisit).
 

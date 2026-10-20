@@ -1,7 +1,12 @@
 name: ci
 on:
+  push:
+    branches: [main]
   pull_request:
-  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: read  # gitleaks lists the PR's commits
 
 jobs:
   test:
@@ -18,6 +23,8 @@ jobs:
       RECONCILER_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans the PR's commit range
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
@@ -34,9 +41,21 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: tests + coverage gate (>=90%)
         run: uv run pytest --cov --cov-report=xml --cov-report=term-missing
+      - name: chaos (200 permutations; the full 1000 runs in `make chaos`)
+        run: uv run python -m bench.chaos_run --runs 200 --no-write
       - name: dependency audit
         run: uv run pip-audit
       - uses: actions/upload-artifact@v7
         with:
           name: coverage
           path: coverage.xml
+
+  mutation:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - name: mutation run on pure decision modules
+        run: uv run python -m bench.mutation_run
