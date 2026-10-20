@@ -105,11 +105,12 @@ Try it (with `make run` going):
 ```python
 import hashlib, hmac, json, httpx
 
-body = json.dumps({"type": "order.updated", "aggregate_id": "o1", "version": 1,
-                   "data": {"status": "paid"}}).encode()
+body = json.dumps(
+    {"type": "order.updated", "aggregate_id": "o1", "version": 1, "data": {"status": "paid"}}
+).encode()
 sig = "sha256=" + hmac.new(b"dev-secret", body, hashlib.sha256).hexdigest()
 r = httpx.post("http://127.0.0.1:8000/webhooks", content=body, headers={"X-Signature": sig})
-print(r.status_code, r.json())          # 202 {...}; send it again: still one effect
+print(r.status_code, r.json())  # 202 {...}; send it again: still one effect
 print(httpx.get("http://127.0.0.1:8000/stats").json()["events_by_status"])
 ```
 
