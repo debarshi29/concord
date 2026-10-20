@@ -29,6 +29,12 @@ services:
   api:
     <<: *app
     ports: ["8000:8000"]
+    # Health is probed on the API only: the image is also used for the worker and migrate jobs, which serve no HTTP.
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/readyz').status==200 else 1)"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
     depends_on:
       migrate:
         condition: service_completed_successfully
