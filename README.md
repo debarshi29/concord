@@ -90,7 +90,7 @@ Design: [`docs/hld.md`](docs/hld.md) (one page + architect's review memo) · con
 ## Quickstart
 
 ```bash
-git clone https://github.com/debarshi29/idempotent-webhook-reconciler && cd idempotent-webhook-reconciler
+git clone https://github.com/debarshi29/concord && cd concord
 make dev      # uv sync --frozen + git hooks
 make test     # 178 tests against a real (embedded) Postgres, coverage gate 90 %
 make run      # embedded Postgres + API on :8000 + worker; docs at /docs (secret: dev-secret)
