@@ -1,4 +1,4 @@
-.PHONY: dev test lint typecheck chaos bench mutate run worker audit openapi up down clean
+.PHONY: dev test lint typecheck profile chaos bench mutate run worker audit openapi up down clean
 
 UV ?= uv
 
@@ -16,6 +16,11 @@ lint:
 
 typecheck:
 	$(UV) run mypy
+
+profile:  ## flamegraph + where a worker's time goes (needs py-spy)
+	$(UV) run py-spy record --idle --subprocesses --format raw -o bench/results/profile_raw.txt --rate 200 -- python -m bench.profile_processing
+	$(UV) run py-spy record --idle --subprocesses --format flamegraph -o bench/results/flamegraph.svg --rate 200 -- python -m bench.profile_processing
+	$(UV) run python -m bench.profile_summary
 
 chaos:  ## 1000 generated delivery permutations; writes bench/results/chaos.csv
 	$(UV) run python -m bench.chaos_run --runs 1000
