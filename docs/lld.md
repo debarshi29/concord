@@ -148,7 +148,7 @@ sequenceDiagram
     participant P as Postgres
     W->>P: BEGIN
     W->>P: SELECT ... FROM events WHERE status='received' AND next_attempt_at<=now ORDER BY seq LIMIT 1 FOR UPDATE SKIP LOCKED
-    W->>P: INSERT aggregates ON CONFLICT DO NOTHING; SELECT ... FOR UPDATE (aggregate lock)
+    W->>P: INSERT aggregates ON CONFLICT DO NOTHING / SELECT ... FOR UPDATE (aggregate lock)
     W->>P: SELECT idempotency WHERE key AND expires_at > now
     alt key seen
         W->>P: events.status='duplicate'
@@ -158,10 +158,10 @@ sequenceDiagram
         alt APPLY
             W->>W: domain.apply_event (TerminalError on poison)
             W->>W: sink(conn, event) (RetryableError on outage)
-            W->>P: UPDATE aggregates; INSERT effect_log; UPSERT idempotency; events.status='processed'
+            W->>P: UPDATE aggregates / INSERT effect_log / UPSERT idempotency / events.status='processed'
             W->>P: RELEASE SAVEPOINT, then drain buffered successors in version order
         else BUFFER
-            W->>P: INSERT buffer (window_expires = now + window); status='buffered'
+            W->>P: INSERT buffer (window_expires = now + window) / status='buffered'
         else STALE
             W->>P: status='stale'
         end
@@ -187,16 +187,16 @@ sequenceDiagram
     loop each aggregate (own transaction)
         R->>P: lock aggregate row
         alt local.version < source.version
-            R->>P: INSERT corrections(kind=missing|behind); overwrite state+version; drain buffer
+            R->>P: INSERT corrections(kind=missing|behind) / overwrite state+version / drain buffer
         else same version, different state
-            R->>P: INSERT corrections(kind=divergent); overwrite; drain buffer
+            R->>P: INSERT corrections(kind=divergent) / overwrite / drain buffer
         else local.version > source.version
-            R->>P: INSERT corrections(kind=local_ahead); NEVER overwrite
+            R->>P: INSERT corrections(kind=local_ahead) / NEVER overwrite
         else in sync
             R->>P: drain buffer only
         end
     end
-    R->>P: flag aggregates the source no longer lists (kind=orphan); INSERT reconcile_runs
+    R->>P: flag aggregates the source no longer lists (kind=orphan) / INSERT reconcile_runs
 ```
 
 ## 4. Invariants (each is enforced by a named test)
