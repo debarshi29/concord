@@ -23,6 +23,8 @@ jobs:
       RECONCILER_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/postgres
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # gitleaks scans the PR's commit range
       - uses: astral-sh/setup-uv@v5
         with:
           enable-cache: true
