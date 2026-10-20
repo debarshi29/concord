@@ -1,0 +1,6 @@
+{
+  "python": "3.12.15",
+  "platform": "Windows-11-10.0.26300-SP0",
+  "cpu_count": 16,
+  "postgres": "16.2"
+}
