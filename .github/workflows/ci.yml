@@ -36,7 +36,7 @@ jobs:
       - name: types (mypy --strict)
         run: uv run mypy
       - name: secrets scan
-        uses: gitleaks/gitleaks-action@v2
+        uses: gitleaks/gitleaks-action@v3
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: tests + coverage gate (>=90%)
