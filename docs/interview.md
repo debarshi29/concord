@@ -171,7 +171,7 @@ aggregate invariants; unauthenticated ops endpoints; replay-attack protection (n
 exactly-once for *external* side effects. All listed in the README with the extension that fixes each.
 
 **Q26. Tell me about a mistake you made and how you caught it.**
-Three real ones. (1) An interrupted mutation run left a mutant (`attempt ** 1`) in `retry.py`; I caught it by diffing
+Four real ones. (1) An interrupted mutation run left a mutant (`attempt ** 1`) in `retry.py`; I caught it by diffing
 against git before committing and now run mutation in an isolated worktree. (2) A `git add -A` leaked stale first-run
 mutation results into `main`; the next PR replaced them and I now stage explicitly. (3) My own drill tests had races
 (stopping at the first DLQ alert, wrong expectation about a version-0 aggregate row) — I fixed the tests, not the code,
