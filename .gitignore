@@ -13,3 +13,5 @@ mutants/
 .env
 *.egg-info/
 dist/
+bench/results/profile_raw.txt
+bench/results/mutation_work/
