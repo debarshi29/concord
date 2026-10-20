@@ -49,3 +49,13 @@ jobs:
         with:
           name: coverage
           path: coverage.xml
+
+  mutation:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'push'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+      - run: uv sync --frozen
+      - name: mutation run on pure decision modules
+        run: uv run python -m bench.mutation_run
