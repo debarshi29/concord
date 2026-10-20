@@ -19,6 +19,7 @@ from reconciler.db import Pool, make_pool, migrate
 from reconciler.logs import configure_logging
 from reconciler.patterns import dlq
 from reconciler.patterns.retry import RetryPolicy
+from reconciler.processor import sweep
 from reconciler.reconcile import HttpSource, reconcile
 from reconciler.settings import Settings, get_settings
 from reconciler.sinks import noop_sink
@@ -88,6 +89,14 @@ def _cmd_reconcile(args: argparse.Namespace, settings: Settings) -> int:
     return 0
 
 
+def _cmd_sweep(args: argparse.Namespace, settings: Settings) -> int:
+    result = sweep(_ctx(settings))
+    _print(
+        {"parked": result.parked, "force_applied": result.force_applied, "purged": result.purged}
+    )
+    return 0
+
+
 def _cmd_stats(args: argparse.Namespace, settings: Settings) -> int:
     _print(collect_stats(_ctx(settings)))
     return 0
@@ -143,6 +152,9 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("reconcile", help="run one reconciliation pass now").set_defaults(
         fn=_cmd_reconcile
     )
+    sub.add_parser(
+        "sweep", help="resolve expired gap windows and purge idempotency rows"
+    ).set_defaults(fn=_cmd_sweep)
     sub.add_parser("stats", help="print operational stats").set_defaults(fn=_cmd_stats)
     sub.add_parser("alerts", help="evaluate alerts; exit 1 if any firing").set_defaults(
         fn=_cmd_alerts

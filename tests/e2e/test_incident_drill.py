@@ -194,3 +194,31 @@ def test_drill_crash_mid_transaction_loses_nothing(live_ctx: AppContext, tmp_pat
     op = Operator(live_ctx, tmp_path)
     op.run("worker", "--until-idle")
     assert aggregate(live_ctx, "order-K") == (1, {"status": "paid"})
+
+
+def test_drill_parked_events_to_reconcile(live_ctx: AppContext, tmp_path: Path) -> None:
+    """Runbook section 5: a version gap that never fills. Park, alert, reconcile heals and drains."""
+    op = Operator(live_ctx, tmp_path, {"RECONCILER_BUFFER_WINDOW_SECONDS": "0"})
+    send(live_ctx, "order-G", 3, {"status": "shipped"})  # v1 and v2 were lost by the sender
+    incident_started = time.monotonic()
+    op.run("worker", "--until-idle")
+    _, swept = op.run("sweep")
+    assert swept["parked"] == 1
+
+    code, alerts = op.run("alerts")
+    assert code == 1 and [a["name"] for a in alerts] == ["parked_events"]
+    assert aggregate(live_ctx, "order-G") == (0, {})  # nothing applied on top of missing history
+
+    truth = [{"aggregate_id": "order-G", "version": 3, "state": {"status": "shipped"}}]
+    with source_of_truth(truth) as url:
+        op.env["RECONCILER_RECONCILE_SOURCE_URL"] = url
+        code, report = op.run("reconcile")
+    assert code == 0 and report["corrected"] == 1
+
+    resolution_seconds = time.monotonic() - incident_started
+    assert op.run("alerts")[0] == 0
+    assert aggregate(live_ctx, "order-G") == (3, {"status": "shipped"})
+    assert (
+        scalar(live_ctx, "SELECT status FROM events") == "stale"
+    )  # parked v3 was covered by the heal
+    print(f"\nDRILL parked-events: resolved with the runbook alone in {resolution_seconds:.1f}s")
