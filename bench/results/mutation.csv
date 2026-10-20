@@ -1,0 +1,7 @@
+module,mutants,killed,incompetent,survived,kill_rate_pct
+src/reconciler/patterns/ordering.py,47,43,0,4,91.5
+src/reconciler/patterns/retry.py,84,76,0,8,90.5
+src/reconciler/signing.py,15,4,0,11,26.7
+src/reconciler/domain.py,31,27,0,4,87.1
+src/reconciler/models.py,18,9,0,9,50.0
+TOTAL,195,159,0,36,81.5
