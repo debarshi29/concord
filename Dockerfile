@@ -14,5 +14,4 @@ COPY --from=build /app /app
 ENV PATH="/app/.venv/bin:$PATH" PYTHONUNBUFFERED=1
 USER app
 EXPOSE 8000
-HEALTHCHECK --interval=15s --timeout=3s CMD python -c "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8000/healthz').status==200 else 1)"
 CMD ["reconciler", "serve", "--host", "0.0.0.0", "--port", "8000"]
