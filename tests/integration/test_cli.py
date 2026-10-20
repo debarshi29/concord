@@ -75,3 +75,15 @@ def test_reconcile_needs_a_source(capsys: pytest.CaptureFixture[str]) -> None:
 def test_openapi_prints_the_contract(capsys: pytest.CaptureFixture[str]) -> None:
     code, spec = run(capsys, "openapi")
     assert code == 0 and "/webhooks" in spec["paths"]  # type: ignore[index]
+
+
+def test_sweep_parks_expired_gaps_and_purges(
+    ctx: AppContext, capsys: pytest.CaptureFixture[str], monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("RECONCILER_BUFFER_WINDOW_SECONDS", "0")
+    get_settings.cache_clear()
+    send(ctx, version=3)  # gap: v1, v2 missing
+    run_until_idle(ctx)
+    code, out = run(capsys, "sweep")
+    assert (code, out) == (0, {"parked": 1, "force_applied": 0, "purged": 0})
+    assert scalar(ctx, "SELECT status FROM events") == "parked"
