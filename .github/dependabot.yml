@@ -12,3 +12,10 @@ updates:
     directory: "/"
     schedule:
       interval: weekly
+    ignore:
+      # The project pins requires-python to 3.12 (pgserver ships cp312 wheels only) and CI/tests run on
+      # Postgres 16: only patch updates of these base images are wanted.
+      - dependency-name: "python"
+        update-types: ["version-update:semver-major", "version-update:semver-minor"]
+      - dependency-name: "postgres"
+        update-types: ["version-update:semver-major"]
