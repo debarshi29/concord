@@ -1,0 +1,21 @@
+{
+  "permutations": 1000,
+  "converged": 1000,
+  "pass_rate_pct": 100.0,
+  "duplicate_effects_total": 0,
+  "unresolved_events_total": 0,
+  "aggregates_drifted_before_reconcile": 1968,
+  "reconciler_corrections": 1968,
+  "naive_failed_permutations": 1000,
+  "naive_failure_rate_pct": 100.0,
+  "naive_duplicate_effects_total": 3124,
+  "profile": "hostile",
+  "workers": 1,
+  "wall_seconds": 166.5,
+  "environment": {
+    "python": "3.12.15",
+    "platform": "Windows-11-10.0.26300-SP0",
+    "cpu_count": 16,
+    "postgres": "16.2"
+  }
+}
