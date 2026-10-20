@@ -24,12 +24,13 @@ reconciler = "reconciler.cli:main"
 
 [dependency-groups]
 dev = [
+    "cosmic-ray>=8.7.0",
     "hypothesis>=6.170.2",
-    "mutmut>=3.8.0",
     "mypy>=2.4.0",
     "pgserver>=0.1.4",
     "pip-audit>=2.10.1",
     "pre-commit>=4.7.0",
+    "py-spy>=0.4.2",
     "pytest>=9.1.1",
     "pytest-cov>=7.1.0",
     "ruff>=0.17.1",
@@ -49,12 +50,17 @@ src = ["src", "tests", "bench"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP", "SIM", "S", "C4", "PT", "RUF"]
-ignore = ["S608"]  # SQL is built only from constant fragments; see docs/lld.md
+ignore = [
+    "E501",   # line length is enforced by `ruff format`; long docstrings/SQL strings are fine
+    "S101",   # asserts are used for type narrowing, never for validation
+    "S608",   # SQL is built only from constant fragments; see docs/lld.md
+    "PT018",
+]
 
 [tool.ruff.lint.per-file-ignores]
-"tests/**" = ["S101", "S105", "S106"]
+"tests/**" = ["S101", "S105", "S106", "S311"]
 "bench/**" = ["S101", "S311"]
-"src/reconciler/chaos/**" = ["S311"]  # seeded PRNG for reproducible chaos, not crypto
+"src/reconciler/chaos/**" = ["S311", "S107"]  # seeded PRNG for reproducible chaos, not crypto
 "src/reconciler/patterns/retry.py" = ["S311"]  # jitter, not crypto
 
 [tool.mypy]
@@ -64,7 +70,7 @@ files = ["src", "tests", "bench"]
 plugins = ["pydantic.mypy"]
 
 [[tool.mypy.overrides]]
-module = ["pgserver.*", "mutmut.*"]
+module = ["pgserver.*", "mutmut.*", "opentelemetry.exporter.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
