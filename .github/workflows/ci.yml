@@ -41,6 +41,8 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       - name: tests + coverage gate (>=90%)
         run: uv run pytest --cov --cov-report=xml --cov-report=term-missing
+      - name: chaos (200 permutations; the full 1000 runs in `make chaos`)
+        run: uv run python -m bench.chaos_run --runs 200 --no-write
       - name: dependency audit
         run: uv run pip-audit
       - uses: actions/upload-artifact@v4
