@@ -84,6 +84,7 @@ markers = [
 [tool.coverage.run]
 source = ["src/reconciler"]
 branch = true
+omit = ["src/reconciler/devserver.py"]  # local-exploration glue (embedded Postgres + uvicorn)
 
 [tool.coverage.report]
 fail_under = 90
