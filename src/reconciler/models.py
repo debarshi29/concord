@@ -25,7 +25,8 @@ class Envelope(BaseModel):
     aggregate_id: str = Field(min_length=1, max_length=128)
     version: int = Field(ge=1, le=2_000_000_000)
     data: dict[str, Any]
-    occurred_at: datetime | None = None
+    # Senders put ISO-8601 strings on the wire; strict mode would reject every one of them.
+    occurred_at: datetime | None = Field(default=None, strict=False)
 
     def content_hash(self) -> str:
         canonical = json.dumps(
