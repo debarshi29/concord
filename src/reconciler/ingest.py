@@ -7,6 +7,7 @@ nothing is silently dropped. Raising `IngestRejected` happens only after the row
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Any
@@ -31,6 +32,37 @@ class Accepted:
 def _clean(body: bytes) -> str:
     # Postgres `text` cannot hold NUL; garbage bodies must still be recordable.
     return body.decode("utf-8", errors="replace").replace("\x00", "�")
+
+
+def _reject_constant(name: str) -> Any:
+    raise ValueError(f"{name} is not valid JSON")
+
+
+def _unstorable(value: Any) -> bool:
+    """True if Postgres `jsonb`/`text` would refuse the value: NUL, lone surrogates, non-finite numbers.
+
+    A signed body can carry these through `json.loads` and the envelope, so they must be turned into
+    a recorded rejection here rather than an INSERT failure (a 500 the sender retries forever).
+    """
+    stack = [value]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            if "\x00" in item:
+                return True
+            try:
+                item.encode("utf-8")
+            except UnicodeEncodeError:
+                return True
+        elif isinstance(item, float):
+            if not math.isfinite(item):
+                return True
+        elif isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, list):
+            stack.extend(item)
+    return False
 
 
 def _insert(
@@ -125,7 +157,7 @@ def ingest(
             )
 
         try:
-            raw: Any = json.loads(body)
+            raw: Any = json.loads(body, parse_constant=_reject_constant)
         except (ValueError, RecursionError) as exc:
             raise _reject(
                 ctx, event_id, now, body, "valid", RejectCode.MALFORMED_JSON, "body is not JSON"
@@ -152,6 +184,17 @@ def ingest(
                 "valid",
                 RejectCode.UNSUPPORTED_EVENT_TYPE,
                 f"unsupported type {envelope.type!r}",
+            )
+
+        if _unstorable(envelope.model_dump()):
+            raise _reject(
+                ctx,
+                event_id,
+                now,
+                body,
+                "valid",
+                RejectCode.INVALID_ENVELOPE,
+                "values cannot be stored: NUL, lone surrogate or non-finite number",
             )
 
         key = idempotency.derive_key(idempotency_header, envelope.event_id, envelope.content_hash())
