@@ -93,3 +93,9 @@ def test_openapi_documents_the_webhook_contract(client: TestClient) -> None:
     spec = client.get("/openapi.json").json()
     op = spec["paths"]["/webhooks"]["post"]
     assert set(op["responses"]) >= {"202", "400", "401", "422"}
+
+
+def test_non_ascii_signature_is_a_401_and_recorded(client: TestClient, ctx: AppContext) -> None:
+    r = client.post("/webhooks", content=body_for(), headers={"X-Signature": b"sha256=\xe9"})
+    assert r.status_code == 401
+    assert r.json()["error"]["code"] == "invalid_signature"

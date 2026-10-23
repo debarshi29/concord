@@ -21,4 +21,8 @@ def verify(
     """Constant-time check against the current secret and (during rotation) the previous one."""
     if not header:
         return False
-    return any(secret and hmac.compare_digest(sign(body, secret), header) for secret in secrets)
+    # Compare bytes: compare_digest raises TypeError on non-ASCII str, and the header is untrusted.
+    given = header.encode("utf-8", errors="replace")
+    return any(
+        secret and hmac.compare_digest(sign(body, secret).encode(), given) for secret in secrets
+    )
