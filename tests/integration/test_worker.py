@@ -77,3 +77,60 @@ def test_run_until_idle_honours_the_event_cap(ctx: AppContext) -> None:
         send(ctx, version=v, data={"amount_cents": v})
     assert len(run_until_idle(ctx, max_events=3)) == 3
     assert len(run_until_idle(ctx)) == 2
+
+
+class _HangingSource:
+    """A source whose listing stalls (a slow or hung endpoint) until released."""
+
+    def __init__(self) -> None:
+        self.entered = threading.Event()
+        self.release = threading.Event()
+
+    def list_aggregates(self) -> list[SourceRecord]:
+        self.entered.set()
+        self.release.wait(timeout=30)
+        return []
+
+
+def test_a_stalled_reconcile_does_not_stall_event_processing(ctx: AppContext) -> None:
+    source = _HangingSource()
+    ctx.settings.worker_poll_seconds = 0.01
+    ctx.settings.sweep_interval_seconds = 0.01
+    ctx.settings.reconcile_interval_seconds = 3600
+    stop = threading.Event()
+    thread = threading.Thread(target=run_forever, args=(ctx, stop, source), daemon=True)
+    thread.start()
+    try:
+        assert source.entered.wait(timeout=10)  # reconcile is now in flight and stuck
+        send(ctx, version=1, data={"status": "pending"})
+        wait_for(lambda: aggregate(ctx) == (1, {"status": "pending"}), timeout=5)
+        assert scalar(ctx, "SELECT count(*) FROM reconcile_runs") == 0  # still stuck
+    finally:
+        source.release.set()
+        stop.set()
+        thread.join(timeout=10)
+    assert not thread.is_alive()
+
+
+def test_a_failing_reconcile_is_logged_and_retried_next_interval(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = {"n": 0}
+
+    def boom(c: AppContext, s: object) -> object:
+        calls["n"] += 1
+        raise RuntimeError("source unreachable")
+
+    monkeypatch.setattr("reconciler.worker.reconcile", boom)
+    ctx.settings.worker_poll_seconds = 0.01
+    ctx.settings.sweep_interval_seconds = 0.01
+    ctx.settings.reconcile_interval_seconds = 0.05
+    stop = threading.Event()
+    thread = threading.Thread(target=run_forever, args=(ctx, stop, ListSource()), daemon=True)
+    thread.start()
+    try:
+        wait_for(lambda: calls["n"] >= 2, timeout=5)
+    finally:
+        stop.set()
+        thread.join(timeout=10)
+    assert not thread.is_alive()
