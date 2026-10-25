@@ -32,3 +32,9 @@ answering "was this key seen 8 days ago?" Reversibility: two-way door (config ch
 ## Revisit criteria
 Reopen if (a) a sender is onboarded whose events are not versioned per aggregate, or (b) idempotency storage
 exceeds 10 % of total database size.
+
+## Update (1.1.0)
+Finished `events` rows are now trimmed too (`RECONCILER_RETENTION_SECONDS`, default 30 days). The two windows interact
+safely: an event that an idempotency record still references is never deleted, and the sweep purges expired
+idempotency records first, so retention shorter than this TTL simply leaves those events in place until the record
+expires. The decision above is unchanged.

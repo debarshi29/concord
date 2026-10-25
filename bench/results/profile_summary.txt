@@ -1,7 +1,7 @@
-samples inside process_next: 3512 (py-spy 200 Hz, --idle)
- 93.4%  psycopg driver (query send/recv/decode, incl. waiting on Postgres)
-  2.1%  reconciler logic
-  1.9%  json
-  1.4%  other
-  1.2%  pydantic validation
-our Python (logic + pydantic + json): 5.2%  (ADR-0005 threshold: 30%)
+samples inside process_next: 2588 (py-spy 200 Hz, --idle)
+ 92.4%  psycopg driver (query send/recv/decode, incl. waiting on Postgres)
+  3.1%  reconciler logic
+  2.1%  other
+  1.3%  json
+  1.1%  pydantic validation
+our Python (logic + pydantic + json): 5.5%  (ADR-0005 threshold: 30%)

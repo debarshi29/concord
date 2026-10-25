@@ -127,7 +127,7 @@ header. Body:
 | `422` | Invalid envelope (including values Postgres cannot store), or unsupported event type |
 | `413` | Body over `MAX_BODY_BYTES` (default 1 MiB); refused unread and not recorded |
 
-Every error carries a typed `error.code` and the id of the recorded event. Also available: `GET /healthz`,
+Every error carries a typed `error.code` and, except `413`, the id of the recorded event. Also available: `GET /healthz`,
 `GET /readyz`, `GET /stats`, `GET /alerts`. The machine-readable contract is [`docs/openapi.json`](docs/openapi.json),
 and a test fails if it drifts from the running app.
 
@@ -138,7 +138,7 @@ and a test fails if it drifts from the running app.
 | `reconciler migrate` | Apply pending schema migrations |
 | `reconciler serve` | Run the ingestion API |
 | `reconciler worker [--until-idle]` | Process events; sweep, alert and reconcile on a schedule |
-| `reconciler sweep` | Resolve expired gap windows and purge expired idempotency records |
+| `reconciler sweep` | Resolve expired gap windows; purge expired idempotency records, old rejections and finished history |
 | `reconciler reconcile` | Run one reconciliation pass now |
 | `reconciler stats` | Events by status, DLQ depth, corrections, last reconcile |
 | `reconciler alerts` | Print firing alerts; exits 1 if any fire |
@@ -215,7 +215,7 @@ as indicative, not as capacity guarantees.
 |---|---|
 | HTTP acknowledgement latency, p50 / p95 / p99 | 1.6 / 2.4 / 3.0 ms (sequential client) |
 | Processing throughput, 1 / 2 / 4 / 8 workers | 314 / 547 / 552 / 512 events/s |
-| Worker time spent in the Postgres driver / in this code | 93.4% / 5.2% |
+| Worker time spent in the Postgres driver / in this code | 92.4% / 5.5% |
 
 Scripts: `make bench`, `make profile`. The flamegraph is
 [`bench/results/flamegraph.svg`](bench/results/flamegraph.svg).
@@ -253,7 +253,7 @@ make openapi     # regenerate docs/openapi.json
 ```
 
 ```text
-src/reconciler/            service: ingest, processor, reconcile, worker, api, cli
+src/reconciler/            service: ingest, processor, reconcile, retention, worker, api, cli
 src/reconciler/patterns/   reusable ordering, retry, idempotency and DLQ building blocks
 src/reconciler/chaos/      chaos harness and naive baseline
 tests/{unit,integration,property,e2e}/

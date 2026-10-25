@@ -28,3 +28,9 @@ unsupported. Reversibility: two-way door until another component depends on cros
 
 ## Revisit criteria
 A single aggregate sustained above ~200 events/s, or any requirement spanning two aggregates.
+
+## Update (1.1.0)
+The claim query (`status = 'received' AND next_attempt_at <= now ORDER BY seq LIMIT 1`) is served by a partial index on
+`(seq) WHERE status = 'received'` (migration `0002`). The original `(next_attempt_at, seq)` index could not return rows
+in `seq` order, so the planner walked every processed row first: 14.9 ms per claim with 200 000 processed events ahead
+of the backlog, 0.075 ms with the partial index. The decision above is unchanged.
