@@ -12,7 +12,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Any, Literal
 
 from reconciler import domain
@@ -244,6 +244,7 @@ class SweepResult:
     parked: int
     force_applied: int
     purged: int
+    rejected_purged: int
 
 
 def sweep(ctx: AppContext) -> SweepResult:
@@ -280,4 +281,10 @@ def sweep(ctx: AppContext) -> SweepResult:
                         forced += 1
                 drain_aggregate(ctx, conn, agg_id, now)
         purged = idempotency.purge_expired(conn, now)
-    return SweepResult(parked=parked, force_applied=forced, purged=purged)
+        rejected_purged = conn.execute(
+            "DELETE FROM events WHERE status = 'rejected' AND signature_status <> 'valid' AND received_at < %s",
+            (now - timedelta(seconds=ctx.settings.rejected_retention_seconds),),
+        ).rowcount
+    return SweepResult(
+        parked=parked, force_applied=forced, purged=purged, rejected_purged=rejected_purged
+    )

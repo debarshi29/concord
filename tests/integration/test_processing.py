@@ -1,12 +1,17 @@
 from __future__ import annotations
 
+import pytest
+
+from reconciler import signing
 from reconciler.clock import FakeClock
 from reconciler.context import AppContext
+from reconciler.errors import IngestRejected
+from reconciler.ingest import ingest
 from reconciler.patterns import idempotency
 from reconciler.processor import process_next, sweep
 from reconciler.settings import GapPolicy
 from reconciler.worker import run_until_idle
-from tests.helpers import aggregate, scalar, send, statuses
+from tests.helpers import SECRET, aggregate, body_for, scalar, send, statuses
 
 
 def test_in_order_events_apply(ctx: AppContext) -> None:
@@ -123,3 +128,22 @@ def test_sweep_purges_expired_idempotency_records(ctx: AppContext, clock: FakeCl
     clock.advance(ctx.settings.idempotency_ttl_seconds + 1)
     assert sweep(ctx).purged == 1
     assert scalar(ctx, "SELECT count(*) FROM idempotency") == 0
+
+
+def test_sweep_purges_old_unauthenticated_rejections_only(
+    ctx: AppContext, clock: FakeClock
+) -> None:
+    body = body_for()
+    for sig in (None, "sha256=bad"):
+        with pytest.raises(IngestRejected):
+            ingest(ctx, body, sig)
+    forged_but_signed = b"not json"  # signed: kept for forensics regardless of age
+    with pytest.raises(IngestRejected):
+        ingest(ctx, forged_but_signed, signing.sign(forged_but_signed, SECRET))
+    send(ctx)  # a received event must never be purged
+    clock.advance(ctx.settings.rejected_retention_seconds - 1)
+    assert sweep(ctx).rejected_purged == 0
+    clock.advance(2)
+    assert sweep(ctx).rejected_purged == 2
+    assert scalar(ctx, "SELECT count(*) FROM events WHERE status = 'rejected'") == 1
+    assert scalar(ctx, "SELECT count(*) FROM events WHERE status = 'received'") == 1

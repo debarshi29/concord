@@ -131,8 +131,9 @@ load; the throughput plateau at ~4 workers was not investigated.
 ### 5.6 Security / tenancy
 
 Single tenant. The only trust boundary is the webhook: HMAC-SHA256 over the raw body, constant-time compare,
-rejected events are stored (for forensics) but never processed. Ops endpoints (`/stats`, `/alerts`) are
-**unauthenticated** and must be bound to an internal network (listed under "deliberately bad at").
+rejected events are stored (for forensics) but never processed; bodies over 1 MiB are refused unread, and
+unauthenticated rejections are stored truncated and purged after a week. Ops endpoints (`/stats`, `/alerts`) are
+open unless `RECONCILER_OPS_TOKEN` is set (then bearer-gated); otherwise bind them to an internal network.
 Proof: `tests/integration/test_ingest.py` (forged/missing signature never reaches `received`).
 
 ### 5.7 The 2 a.m. story

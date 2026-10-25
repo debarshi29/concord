@@ -16,6 +16,7 @@ test (`tests/integration/test_openapi_contract.py`) fails if it drifts from the 
 | 400 | `malformed_json` | body is not JSON | yes, `rejected` | fix payload |
 | 422 | `invalid_envelope` | envelope schema violated (`error.detail` lists fields) | yes, `rejected` | fix payload |
 | 422 | `unsupported_event_type` | `type` is not `order.updated` | yes, `rejected` | stop sending |
+| 413 | `payload_too_large` | body over `MAX_BODY_BYTES` | **no**: refused unread, so an anonymous flood cannot fill the table | send less |
 
 Every error body is `{"error": {"code", "detail", "retryable": false, "event_id"}}`; `event_id` is the id of the
 **recorded** event, so a rejected delivery can be found later. The ack (202) is sent only after the insert has
@@ -234,6 +235,9 @@ row lock. The reconciler takes the same aggregate lock per aggregate, in its own
 | `RETRY_BASE_SECONDS` / `RETRY_CAP_SECONDS` / `RETRY_MAX_ATTEMPTS` | 1 / 300 / 6 | backoff `U(0, min(cap, base·2^(n−1)))` |
 | `WORKER_POLL_SECONDS` / `SWEEP_INTERVAL_SECONDS` | 0.5 / 15 | worker loop cadence |
 | `RECONCILE_SOURCE_URL` / `RECONCILE_INTERVAL_SECONDS` | – / 900 | enables the reconciler job |
+| `OPS_TOKEN` | – | when set, `/stats` and `/alerts` require `Authorization: Bearer <token>` |
+| `MAX_BODY_BYTES` | 1048576 | larger bodies get 413 without being read or stored |
+| `REJECTED_RETENTION_SECONDS` | 604800 | sweep deletes unauthenticated `rejected` rows older than this (bodies stored truncated to 2 KiB) |
 | `ALERT_DLQ_DEPTH` / `ALERT_PARKED_EVENTS` / `ALERT_OLDEST_BUFFERED_SECONDS` / `ALERT_RECONCILE_AGE_SECONDS` | 1 / 1 / 900 / 3600 | alert thresholds |
 | `OTEL_EXPORTER` | `none` | `console` or `otlp` (install the `otlp` extra) |
 | `FAULT_DOWNSTREAM_OUTAGE_FILE` | – | fault injection for drills: sink fails while the file exists |
