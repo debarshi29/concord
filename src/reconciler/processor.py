@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from datetime import datetime, timedelta
 from typing import Any, Literal
 
-from reconciler import domain
+from reconciler import domain, retention
 from reconciler.context import AppContext
 from reconciler.db import Conn
 from reconciler.errors import ReconcilerError, RetryableError, TerminalError
@@ -245,6 +245,7 @@ class SweepResult:
     force_applied: int
     purged: int
     rejected_purged: int
+    retention_purged: int
 
 
 def sweep(ctx: AppContext) -> SweepResult:
@@ -285,6 +286,11 @@ def sweep(ctx: AppContext) -> SweepResult:
             "DELETE FROM events WHERE status = 'rejected' AND signature_status <> 'valid' AND received_at < %s",
             (now - timedelta(seconds=ctx.settings.rejected_retention_seconds),),
         ).rowcount
+        history = retention.purge_history(conn, now, ctx.settings.retention_seconds)
     return SweepResult(
-        parked=parked, force_applied=forced, purged=purged, rejected_purged=rejected_purged
+        parked=parked,
+        force_applied=forced,
+        purged=purged,
+        rejected_purged=rejected_purged,
+        retention_purged=history.total,
     )

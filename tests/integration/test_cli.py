@@ -87,6 +87,12 @@ def test_sweep_parks_expired_gaps_and_purges(
     code, out = run(capsys, "sweep")
     assert (code, out) == (
         0,
-        {"parked": 1, "force_applied": 0, "purged": 0, "rejected_purged": 0},
+        {
+            "parked": 1,
+            "force_applied": 0,
+            "purged": 0,
+            "rejected_purged": 0,
+            "retention_purged": 0,
+        },
     )
     assert scalar(ctx, "SELECT status FROM events") == "parked"

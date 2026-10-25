@@ -34,6 +34,8 @@ class Settings(BaseSettings):
     rejected_retention_seconds: int = Field(default=7 * 24 * 3600, ge=1)
 
     idempotency_ttl_seconds: int = Field(default=7 * 24 * 3600, ge=1)
+    # Age past which finished history (events, effect log, corrections, resolved DLQ) is deleted. 0 keeps everything.
+    retention_seconds: int = Field(default=30 * 24 * 3600, ge=0)
     buffer_window_seconds: int = Field(default=300, ge=0)
     gap_policy: GapPolicy = GapPolicy.PARK_AND_ALERT
 

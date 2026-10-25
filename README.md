@@ -160,6 +160,7 @@ All settings are environment variables prefixed `RECONCILER_`, validated at star
 | `OPS_TOKEN` | unset | Bearer token required by `/stats` and `/alerts` when set |
 | `MAX_BODY_BYTES` | 1048576 | Largest accepted webhook body |
 | `REJECTED_RETENTION_SECONDS` | 604800 (7 days) | How long unauthenticated rejections are kept (stored truncated to 2 KiB) |
+| `RETENTION_SECONDS` | 2592000 (30 days) | Age after which finished history is deleted; `0` keeps everything |
 | `OTEL_EXPORTER` | `none` | `console` or `otlp` (install the `otlp` extra) |
 
 The complete list is in [`docs/lld.md`](docs/lld.md#6-configuration-reconciler_-validated-at-boot-by-pydantic-settings).
@@ -227,8 +228,9 @@ Scripts: `make bench`, `make profile`. The flamegraph is
 - **A single hot aggregate is serialised** by its row lock, and ordering is per aggregate only.
 - **`/stats` and `/alerts` are open unless `OPS_TOKEN` is set.** With it set they require `Authorization: Bearer <token>`; without it, expose them on an internal network only (the API logs a warning at boot).
 - **No replay-attack window.** Signatures cover the body, not a timestamp.
-- **`events` is never trimmed.** There is no partitioning or retention yet; at 50 events/s, roughly 10 GB per day if
-  every duplicate is kept.
+- **Retention trims history; it does not partition.** Finished events, the effect log, corrections and resolved DLQ
+  entries are deleted after `RETENTION_SECONDS` (30 days), so storage plateaus at about 30 days of traffic (roughly
+  300 GB at 50 events/s if every duplicate is kept). Time partitioning is still the next step past ~1 M events/day.
 - **One Postgres primary** bounds throughput.
 
 ## Roadmap
