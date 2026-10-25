@@ -11,11 +11,13 @@ from __future__ import annotations
 import json
 from collections.abc import Iterable
 from dataclasses import dataclass
+from datetime import datetime
 from typing import Any, Protocol
 
 import httpx
 
 from reconciler.context import AppContext
+from reconciler.db import Conn
 from reconciler.logs import get_logger
 from reconciler.processor import drain_aggregate, lock_aggregate
 from reconciler.telemetry import tracer
@@ -64,6 +66,17 @@ class ReconcileReport:
     orphans: int
 
 
+def _already_flagged(conn: Conn, aggregate_id: str, kind: str) -> bool:
+    """True if this aggregate's latest correction is the same flag-only condition (`local_ahead`,
+    `orphan`). Such a condition persists until a human acts, so it is logged once, not once per run;
+    a different correction in between (it was healed, then drifted again) makes it new."""
+    row = conn.execute(
+        "SELECT kind FROM corrections WHERE aggregate_id = %s ORDER BY id DESC LIMIT 1",
+        (aggregate_id,),
+    ).fetchone()
+    return row is not None and row["kind"] == kind
+
+
 def _correct(ctx: AppContext, rec: SourceRecord, now: Any) -> str | None:
     """Reconcile one aggregate in its own transaction. Returns the correction kind, if any."""
     with ctx.pool.connection() as conn, conn.transaction():
@@ -71,6 +84,8 @@ def _correct(ctx: AppContext, rec: SourceRecord, now: Any) -> str | None:
         if version > rec.version:
             kind = "local_ahead"  # source is behind us: flag, never overwrite newer local data
             after = None
+            if _already_flagged(conn, rec.aggregate_id, kind):
+                return kind
         elif version < rec.version:
             kind = "missing" if version == 0 else "behind"
             after = rec
@@ -124,7 +139,7 @@ def reconcile(ctx: AppContext, source: Source) -> ReconcileReport:
                 ahead += 1
             elif kind is not None:
                 corrected += 1
-        orphans = _flag_orphans(ctx, seen)
+        orphans = _flag_orphans(ctx, seen, started)
         span.set_attribute("checked", checked)
         span.set_attribute("corrected", corrected)
     with ctx.pool.connection() as conn:
@@ -135,21 +150,31 @@ def reconcile(ctx: AppContext, source: Source) -> ReconcileReport:
     return ReconcileReport(checked=checked, corrected=corrected, local_ahead=ahead, orphans=orphans)
 
 
-def _flag_orphans(ctx: AppContext, seen: set[str]) -> int:
-    """Aggregates we hold that the source no longer lists. Flagged for a human; never deleted."""
+def _flag_orphans(ctx: AppContext, seen: set[str], started: datetime) -> int:
+    """Aggregates we hold that the source no longer lists. Flagged for a human; never deleted.
+
+    Only aggregates untouched since the run began count: the listing is paged over minutes, so one
+    created or advanced meanwhile may legitimately be missing from it. The next run judges it.
+    """
     now = ctx.clock.now()
+    new = 0
     with ctx.pool.connection() as conn, conn.transaction():
         ids = [
             r["id"]
-            for r in conn.execute("SELECT id FROM aggregates WHERE version > 0")
+            for r in conn.execute(
+                "SELECT id FROM aggregates WHERE version > 0 AND updated_at <= %s", (started,)
+            )
             if r["id"] not in seen
         ]
         for agg_id in ids:
+            if _already_flagged(conn, agg_id, "orphan"):
+                continue
+            new += 1
             conn.execute(
                 "INSERT INTO corrections (aggregate_id, kind, before, after, corrected_at) "
                 "VALUES (%s, 'orphan', NULL, NULL, %s)",
                 (agg_id, now),
             )
-    if ids:
-        log.warning("aggregates missing from source", extra={"count": len(ids)})
+    if new:
+        log.warning("aggregates missing from source", extra={"count": new})
     return len(ids)

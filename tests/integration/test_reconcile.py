@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 import httpx
 import pytest
 
@@ -107,3 +109,57 @@ def test_http_source_surfaces_errors() -> None:
     with pytest.raises(httpx.HTTPStatusError) as exc:
         list(source.list_aggregates())
     assert exc.value.response.status_code == 503
+
+
+def test_an_unresolved_condition_is_logged_once_not_every_run(ctx: AppContext) -> None:
+    """`corrections_last_24h` is a health metric that should trend to zero; a standing condition
+    must not add a row per run."""
+    send(ctx, "order-gone", 1, {"status": "pending"})
+    send(ctx, "order-1", 1, {"status": "pending"})
+    send(ctx, "order-1", 2, {"status": "paid"})
+    run_until_idle(ctx)
+    ahead = SourceRecord("order-1", 1, {"status": "pending"})
+    for _ in range(3):
+        report = reconcile(ctx, ListSource(ahead))
+        assert (report.local_ahead, report.orphans) == (1, 1)  # still reported every run
+    assert sorted(_corrections(ctx)) == ["local_ahead", "orphan"]
+
+
+def test_a_condition_that_clears_and_returns_is_logged_again(ctx: AppContext) -> None:
+    send(ctx, version=1, data={"status": "pending"})
+    send(ctx, version=2, data={"status": "paid"})
+    run_until_idle(ctx)
+    behind = SourceRecord("order-1", 1, {"status": "pending"})
+    reconcile(ctx, ListSource(behind))
+    reconcile(
+        ctx, ListSource(SourceRecord("order-1", 3, {"status": "shipped"}))
+    )  # source overtakes
+    reconcile(ctx, ListSource(SourceRecord("order-1", 2, {"status": "paid"})))  # ...then regresses
+    assert _corrections(ctx) == ["local_ahead", "behind", "local_ahead"]
+
+
+class _BusySource:
+    """Lists nothing, but a new aggregate lands locally while the (slow) listing is in flight."""
+
+    def __init__(self, ctx: AppContext, clock: FakeClock) -> None:
+        self.ctx, self.clock = ctx, clock
+
+    def list_aggregates(self) -> Iterator[SourceRecord]:
+        self.clock.advance(5)
+        send(self.ctx, "order-new", 1, {"status": "pending"})
+        run_until_idle(self.ctx)
+        yield from ()
+
+
+def test_aggregate_created_during_the_run_is_not_an_orphan(
+    ctx: AppContext, clock: FakeClock
+) -> None:
+    send(ctx, "order-gone", 1, {"status": "pending"})
+    run_until_idle(ctx)
+    clock.advance(1)
+    report = reconcile(ctx, _BusySource(ctx, clock))
+    assert aggregate(ctx, "order-new") is not None
+    assert report.orphans == 1  # only order-gone, which predates the run
+    with ctx.pool.connection() as conn:
+        flagged = [r["aggregate_id"] for r in conn.execute("SELECT aggregate_id FROM corrections")]
+    assert flagged == ["order-gone"]
