@@ -17,6 +17,7 @@ class RejectCode(StrEnum):
     MALFORMED_JSON = "malformed_json"
     INVALID_ENVELOPE = "invalid_envelope"
     UNSUPPORTED_EVENT_TYPE = "unsupported_event_type"
+    PAYLOAD_TOO_LARGE = "payload_too_large"
 
 
 class ReconcilerError(Exception):

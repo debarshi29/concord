@@ -85,5 +85,8 @@ def test_sweep_parks_expired_gaps_and_purges(
     send(ctx, version=3)  # gap: v1, v2 missing
     run_until_idle(ctx)
     code, out = run(capsys, "sweep")
-    assert (code, out) == (0, {"parked": 1, "force_applied": 0, "purged": 0})
+    assert (code, out) == (
+        0,
+        {"parked": 1, "force_applied": 0, "purged": 0, "rejected_purged": 0},
+    )
     assert scalar(ctx, "SELECT status FROM events") == "parked"

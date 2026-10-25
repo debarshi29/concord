@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Iterator
 
 import pytest
 from fastapi.testclient import TestClient
@@ -10,7 +11,7 @@ from reconciler import signing
 from reconciler.api import create_app
 from reconciler.context import AppContext
 from reconciler.worker import run_until_idle
-from tests.helpers import SECRET, aggregate, body_for
+from tests.helpers import SECRET, aggregate, body_for, scalar
 
 
 @pytest.fixture
@@ -99,3 +100,62 @@ def test_non_ascii_signature_is_a_401_and_recorded(client: TestClient, ctx: AppC
     r = client.post("/webhooks", content=body_for(), headers={"X-Signature": b"sha256=\xe9"})
     assert r.status_code == 401
     assert r.json()["error"]["code"] == "invalid_signature"
+
+
+def test_oversized_body_is_refused_unread_and_unrecorded(
+    client: TestClient, ctx: AppContext
+) -> None:
+    ctx.settings.max_body_bytes = 1000
+    r = post(client, b"x" * 1001, signature=None)
+    assert r.status_code == 413
+    assert r.json()["error"]["code"] == "payload_too_large"
+    assert (
+        scalar(ctx, "SELECT count(*) FROM events") == 0
+    )  # nothing stored for an unauthenticated flood
+
+
+def test_oversized_chunked_body_without_content_length_is_refused(
+    client: TestClient, ctx: AppContext
+) -> None:
+    ctx.settings.max_body_bytes = 1000
+
+    def chunks() -> Iterator[bytes]:
+        for _ in range(5):
+            yield b"x" * 300
+
+    r = client.post("/webhooks", content=chunks())  # chunked: no declared length to check
+    assert r.status_code == 413
+
+
+def test_body_at_the_limit_is_accepted(client: TestClient, ctx: AppContext) -> None:
+    body = body_for(data={"note": "y" * 100})
+    ctx.settings.max_body_bytes = len(body)
+    assert post(client, body).status_code == 202
+
+
+def _ops_client(ctx: AppContext, token: str) -> TestClient:
+    ctx.settings.ops_token = SecretStr(token)
+    return TestClient(create_app(ctx))
+
+
+def test_ops_endpoints_require_the_token_when_one_is_configured(ctx: AppContext) -> None:
+    c = _ops_client(ctx, "s3cret-token")
+    for path in ("/stats", "/alerts"):
+        assert c.get(path).status_code == 401
+        assert c.get(path, headers={"Authorization": "Bearer nope"}).status_code == 401
+        assert c.get(path, headers={"Authorization": b"Bearer \xe9"}).status_code == 401
+        assert (
+            c.get(path, headers={"Authorization": "s3cret-token"}).status_code == 401
+        )  # not Bearer
+        assert c.get(path, headers={"Authorization": "Bearer s3cret-token"}).status_code == 200
+    assert c.get("/stats").headers["www-authenticate"] == "Bearer"
+
+
+def test_probes_and_the_webhook_stay_open_when_a_token_is_configured(ctx: AppContext) -> None:
+    c = _ops_client(ctx, "s3cret-token")
+    assert c.get("/healthz").status_code == 200 and c.get("/readyz").status_code == 200
+    assert post(c, body_for()).status_code == 202
+
+
+def test_ops_endpoints_are_open_without_a_token(client: TestClient) -> None:
+    assert client.get("/stats").status_code == 200 and client.get("/alerts").status_code == 200

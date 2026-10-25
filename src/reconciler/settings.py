@@ -26,6 +26,12 @@ class Settings(BaseSettings):
 
     webhook_secret: SecretStr = SecretStr("")
     webhook_secret_previous: SecretStr = SecretStr("")
+    # Bearer token for /stats and /alerts. Empty leaves them open (internal-network deployments).
+    ops_token: SecretStr = SecretStr("")
+
+    # Bodies are refused unread above this size; unauthenticated rejections are kept only briefly.
+    max_body_bytes: int = Field(default=1_048_576, ge=1)
+    rejected_retention_seconds: int = Field(default=7 * 24 * 3600, ge=1)
 
     idempotency_ttl_seconds: int = Field(default=7 * 24 * 3600, ge=1)
     buffer_window_seconds: int = Field(default=300, ge=0)

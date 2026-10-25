@@ -34,6 +34,18 @@ def _clean(body: bytes) -> str:
     return body.decode("utf-8", errors="replace").replace("\x00", "�")
 
 
+# Rejections of unauthenticated requests keep only a prefix: anyone can send them, and they are
+# for forensics, not replay. Signed bodies are kept whole.
+_UNTRUSTED_BODY_CHARS = 2048
+
+
+def _stored_body(body: bytes, signature_status: str) -> str:
+    text = _clean(body)
+    if signature_status != "valid" and len(text) > _UNTRUSTED_BODY_CHARS:
+        return f"{text[:_UNTRUSTED_BODY_CHARS]}…[truncated, {len(body)} bytes received]"
+    return text
+
+
 def _reject_constant(name: str) -> Any:
     raise ValueError(f"{name} is not valid JSON")
 
@@ -88,7 +100,7 @@ def _insert(
                 envelope.aggregate_id if envelope else None,
                 envelope.version if envelope else None,
                 envelope.type if envelope else None,
-                _clean(body),
+                _stored_body(body, signature_status),
                 json.dumps(envelope.model_dump(mode="json")) if envelope else None,
                 signature_status,
                 status,

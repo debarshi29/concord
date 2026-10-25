@@ -92,7 +92,12 @@ def _cmd_reconcile(args: argparse.Namespace, settings: Settings) -> int:
 def _cmd_sweep(args: argparse.Namespace, settings: Settings) -> int:
     result = sweep(_ctx(settings))
     _print(
-        {"parked": result.parked, "force_applied": result.force_applied, "purged": result.purged}
+        {
+            "parked": result.parked,
+            "force_applied": result.force_applied,
+            "purged": result.purged,
+            "rejected_purged": result.rejected_purged,
+        }
     )
     return 0
 

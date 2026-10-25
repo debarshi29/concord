@@ -182,3 +182,19 @@ def test_non_standard_json_constants_are_malformed(ctx: AppContext, constant: st
         '{"type":"order.updated","aggregate_id":"a","version":1,"data":{"x":' + constant + "}}"
     ).encode()
     assert _signed(ctx, body) == "rejected:malformed_json"
+
+
+def test_unauthenticated_rejections_keep_only_a_prefix_of_the_body(ctx: AppContext) -> None:
+    big = b'{"junk":"' + b"z" * 10_000 + b'"}'
+    with pytest.raises(IngestRejected) as exc:
+        ingest(ctx, big, "sha256=bad")
+    stored = str(_event(ctx, exc.value.event_id)["raw_body"])
+    assert len(stored) < 2200
+    assert stored.endswith(f"…[truncated, {len(big)} bytes received]")
+
+
+def test_signed_bodies_are_kept_whole_even_when_rejected(ctx: AppContext) -> None:
+    big = b'{"junk":"' + b"z" * 10_000 + b'"}'  # signed, but not an envelope
+    with pytest.raises(IngestRejected) as exc:
+        ingest(ctx, big, signing.sign(big, SECRET))
+    assert str(_event(ctx, exc.value.event_id)["raw_body"]) == big.decode()
