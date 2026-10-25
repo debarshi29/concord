@@ -178,3 +178,8 @@ def test_domain_field_boundaries() -> None:
     with pytest.raises(TerminalError):
         apply_event({}, {"customer_id": "c" * 129})
     assert apply_event({}, {"currency": "EUR"}) == {"currency": "EUR"}
+
+
+def test_non_ascii_signature_header_is_a_mismatch_not_an_error() -> None:
+    assert signing.verify(b"{}", "sha256=é", ["s"]) is False
+    assert signing.verify(b"{}", "sha256=\ud800", ["s"]) is False

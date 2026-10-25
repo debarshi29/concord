@@ -115,3 +115,70 @@ def test_duplicate_deliveries_are_all_recorded(ctx: AppContext) -> None:
     send(ctx)
     send(ctx)
     assert scalar(ctx, "SELECT count(*) FROM events WHERE idempotency_key = 'order-1-v1'") == 2
+
+
+def _signed(ctx: AppContext, body: bytes) -> str:
+    """Ingest a correctly signed body and return the stored event's status."""
+    try:
+        accepted = ingest(ctx, body, signing.sign(body, SECRET))
+    except IngestRejected as rej:
+        return str(_event(ctx, rej.event_id)["status"]) + ":" + rej.code.value
+    return str(_event(ctx, accepted.event_id)["status"])
+
+
+def test_iso_8601_occurred_at_is_accepted(ctx: AppContext) -> None:
+    body = json.dumps(
+        {
+            "type": "order.updated",
+            "aggregate_id": "a",
+            "version": 1,
+            "data": {"status": "paid"},
+            "occurred_at": "2026-01-01T00:00:00Z",
+        }
+    ).encode()
+    assert _signed(ctx, body) == "received"
+
+
+def test_bad_occurred_at_is_still_an_invalid_envelope(ctx: AppContext) -> None:
+    body = json.dumps(
+        {
+            "type": "order.updated",
+            "aggregate_id": "a",
+            "version": 1,
+            "data": {},
+            "occurred_at": "yesterday-ish",
+        }
+    ).encode()
+    assert _signed(ctx, body) == "rejected:invalid_envelope"
+
+
+@pytest.mark.parametrize(
+    "data_json",
+    [
+        r'{"customer": "x\u0000"}',  # NUL in a string
+        r'{"customer": "\ud800"}',  # lone surrogate
+        r'{"\u0000": 1}',  # NUL in a key
+        '{"amount": 1e999}',  # overflows to infinity
+    ],
+)
+def test_values_postgres_cannot_store_are_recorded_as_rejections(
+    ctx: AppContext, data_json: str
+) -> None:
+    body = (
+        '{"type":"order.updated","aggregate_id":"a","version":1,"data":' + data_json + "}"
+    ).encode()
+    assert _signed(ctx, body) == "rejected:invalid_envelope"
+    assert scalar(ctx, "SELECT count(*) FROM events WHERE status = 'received'") == 0
+
+
+def test_nul_in_aggregate_id_is_a_recorded_rejection(ctx: AppContext) -> None:
+    body = rb'{"type":"order.updated","aggregate_id":"a\u0000b","version":1,"data":{}}'
+    assert _signed(ctx, body) == "rejected:invalid_envelope"
+
+
+@pytest.mark.parametrize("constant", ["NaN", "Infinity", "-Infinity"])
+def test_non_standard_json_constants_are_malformed(ctx: AppContext, constant: str) -> None:
+    body = (
+        '{"type":"order.updated","aggregate_id":"a","version":1,"data":{"x":' + constant + "}}"
+    ).encode()
+    assert _signed(ctx, body) == "rejected:malformed_json"
