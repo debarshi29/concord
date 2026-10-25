@@ -52,6 +52,10 @@ def migrate(pool: Pool) -> list[str]:
     """Apply pending migrations in order. Returns the versions applied by this call."""
     applied: list[str] = []
     with pool.connection() as conn:
+        # Autocommit, so the session-level lock outlives only *committed* work: with an implicit
+        # transaction the unlock ran before the commit, and `conn.transaction()` was a mere savepoint
+        # (a failure in migration N then rolled back 1..N-1 too).
+        conn.autocommit = True
         conn.execute("SELECT pg_advisory_lock(%s)", (_MIGRATION_LOCK_KEY,))
         try:
             conn.execute(
@@ -69,4 +73,5 @@ def migrate(pool: Pool) -> list[str]:
                 log.info("migration applied", extra={"version": name})
         finally:
             conn.execute("SELECT pg_advisory_unlock(%s)", (_MIGRATION_LOCK_KEY,))
+            conn.autocommit = False  # the connection goes back to the pool
     return applied
