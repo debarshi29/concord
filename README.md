@@ -102,6 +102,7 @@ reconciler worker                                # processing, sweeps, alerts, r
 ```
 
 A `Dockerfile` and `docker-compose.yml` (Postgres, migrate, API, worker) are included: `docker compose up --build`.
+The compose file uses a development webhook secret; replace it, and set `RECONCILER_OPS_TOKEN` in your shell to protect `/stats` and `/alerts`.
 
 ## HTTP API
 
