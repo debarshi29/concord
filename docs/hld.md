@@ -88,7 +88,7 @@ load; the throughput plateau at ~4 workers was not investigated.
 
 * Row size ≈ 1 KB (raw body + payload jsonb + indexes ≈ 2.5 KB). At 50 ev/s: 4.3 M rows/day ≈ **~10 GB/day**
   with indexes if every duplicate is retained → `events` needs a 30-day retention job and time partitioning
-  beyond ~1 M events/day (documented extension; v1 ships the purge of idempotency rows only).
+  beyond ~1 M events/day (v1.1 ships the retention job, `RETENTION_SECONDS`; partitioning remains an extension).
 * Idempotency table: one row per applied event, ~150 B; 7 days × 4.3 M ≈ 30 M rows ≈ 4.5 GB worst case.
 * Workers: processing is a few round-trips; **measured ≈ 260 ev/s per worker** (the estimate made before building
   was 100–200). Peak 500 ev/s ⇒ 2–3 workers; average load needs 1.
@@ -149,5 +149,5 @@ Runbook entry: [`runbook.md` §3 "DLQ depth alert"](runbook.md), exercised by `t
 ### 5.8 Deliberately deferred
 
 Outbox for *outbound* publication, multi-source reconciliation, schema evolution/versioned event types,
-`events` partitioning/retention, multi-tenant isolation, authentication on ops endpoints, replay-attack
+`events` partitioning, multi-tenant isolation, per-user authentication on ops endpoints, replay-attack
 protection (signed timestamp window). Each is listed in the README's *Extensions*.

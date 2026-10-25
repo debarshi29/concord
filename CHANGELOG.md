@@ -4,6 +4,15 @@ versioning: [SemVer](https://semver.org).
 
 ## [Unreleased]
 
+### Added
+- History retention (`RETENTION_SECONDS`, default 30 days, `0` disables): the sweep deletes finished events, effect-log
+  rows, corrections and resolved DLQ entries past the window in bounded batches. Events pinned by an idempotency
+  record, an open DLQ entry or the buffer, and the latest reconcile run, are never deleted. Migration `0003` adds the
+  supporting indexes. `reconciler sweep` reports `retention_purged`.
+
+### Changed
+- **Behaviour change:** history older than 30 days is now deleted by default. Set `RECONCILER_RETENTION_SECONDS=0` to keep it.
+
 ## [1.0.1] - 2026-10-25
 Fixes from a full review of `src/`. Three of them could lose or mis-handle a valid event; none had been caught by the
 chaos harness because it never sent those inputs.

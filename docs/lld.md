@@ -238,6 +238,7 @@ row lock. The reconciler takes the same aggregate lock per aggregate, in its own
 | `OPS_TOKEN` | – | when set, `/stats` and `/alerts` require `Authorization: Bearer <token>` |
 | `MAX_BODY_BYTES` | 1048576 | larger bodies get 413 without being read or stored |
 | `REJECTED_RETENTION_SECONDS` | 604800 | sweep deletes unauthenticated `rejected` rows older than this (bodies stored truncated to 2 KiB) |
+| `RETENTION_SECONDS` | 2592000 | sweep deletes finished events, effect-log rows, corrections and resolved DLQ rows older than this, in batches of 5000 per table; `0` disables. Never deletes events still referenced by an idempotency record, an open DLQ entry or the buffer, nor the latest reconcile run |
 | `ALERT_DLQ_DEPTH` / `ALERT_PARKED_EVENTS` / `ALERT_OLDEST_BUFFERED_SECONDS` / `ALERT_RECONCILE_AGE_SECONDS` | 1 / 1 / 900 / 3600 | alert thresholds |
 | `OTEL_EXPORTER` | `none` | `console` or `otlp` (install the `otlp` extra) |
 | `FAULT_DOWNSTREAM_OUTAGE_FILE` | – | fault injection for drills: sink fails while the file exists |
