@@ -44,7 +44,7 @@ idempotency record atomically and drains any buffered successors. See `docs/lld.
 
 **Q5. Why acknowledge only after persisting?**
 So a crash after the ack cannot lose an event (write-ahead). The cost is one durable write on the hot path: measured
-HTTP ack latency is p50 2.1 ms / p95 2.6 ms / p99 2.9 ms against a 50 ms p95 target.
+HTTP ack latency is p50 1.6 ms / p95 2.4 ms / p99 3.0 ms against a 50 ms p95 target.
 
 **Q6. How do you pick the idempotency key, and how long do you keep it?** (ADR-0001)
 Precedence: `Idempotency-Key` header, then the sender's `event_id`, else a SHA-256 of the canonical content. Kept 7
@@ -153,7 +153,7 @@ inside the transaction and asserts nothing was half-applied and the event finish
 ## E. Performance and scale
 
 **Q23. What are the numbers?**
-Single laptop, embedded Postgres: ack latency p95 2.6 ms; processing 259 / 512 / 579 / 532 events/s at 1 / 2 / 4 / 8
+Single laptop, embedded Postgres: ack latency p95 2.4 ms; processing 314 / 547 / 552 / 512 events/s at 1 / 2 / 4 / 8
 workers. These are evidence for the NFR table, not a capacity promise; I did not chase the plateau because the
 revisit criteria (ADR-0004) are far away.
 

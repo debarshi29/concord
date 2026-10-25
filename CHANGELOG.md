@@ -42,6 +42,9 @@ chaos harness because it never sent those inputs.
 ### Measured
 - 211 tests, 97 % coverage; mutation kill rate 182 / 183 (99.5 %), the one survivor being the documented equivalent
   mutant in `ordering.py`.
+- Benchmarks re-run on the fixed code: 1 000 / 1 000 hostile permutations converge with 0 duplicate effects (naive handler
+  wrong on 1 000 / 1 000); ack p50 / p95 / p99 1.6 / 2.4 / 3.0 ms; 314 / 547 / 552 / 512 events/s at 1 / 2 / 4 / 8 workers.
+  Throughput differences from 1.0.0 are within run-to-run noise on this laptop.
 
 ## [1.0.0] - 2026-10-20
 First release: the warm-up project (P14) of the Business-First AI Engineering Portfolio.

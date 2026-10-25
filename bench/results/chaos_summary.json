@@ -11,7 +11,7 @@
   "naive_duplicate_effects_total": 3124,
   "profile": "hostile",
   "workers": 1,
-  "wall_seconds": 166.5,
+  "wall_seconds": 281.2,
   "environment": {
     "python": "3.12.15",
     "platform": "Windows-11-10.0.26300-SP0",
