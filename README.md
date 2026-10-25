@@ -201,8 +201,8 @@ Hostile traffic is 15% dropped, 30% duplicated and 15% corrupted events, heavy r
 hostile run an independent audit found 1,968 drifted aggregates before reconciliation and the reconciler corrected
 all 1,968.
 
-The suite has 178 tests at 97% coverage against a real Postgres. Mutation testing of the decision modules kills 181 of
-182 mutants (99.5%); see [`docs/mutation.md`](docs/mutation.md).
+The suite has 211 tests at 97% coverage against a real Postgres. Mutation testing of the decision modules kills 182 of
+183 mutants (99.5%); see [`docs/mutation.md`](docs/mutation.md).
 
 ## Performance
 

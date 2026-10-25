@@ -1,6 +1,6 @@
 [project]
 name = "webhook-reconciler"
-version = "1.0.0"
+version = "1.0.1"
 description = "Idempotent webhook reconciler: exactly-once effects over at-least-once delivery, proven by a chaos harness."
 readme = "README.md"
 requires-python = ">=3.12,<3.13"

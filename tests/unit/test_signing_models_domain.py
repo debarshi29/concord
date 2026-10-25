@@ -183,3 +183,27 @@ def test_domain_field_boundaries() -> None:
 def test_non_ascii_signature_header_is_a_mismatch_not_an_error() -> None:
     assert signing.verify(b"{}", "sha256=é", ["s"]) is False
     assert signing.verify(b"{}", "sha256=\ud800", ["s"]) is False
+
+
+def test_envelope_parses_iso_8601_occurred_at_from_json_strings() -> None:
+    """The wire carries strings; `strict=True` on this field would reject every timestamp."""
+    env = Envelope.model_validate(
+        {
+            "type": "order.updated",
+            "aggregate_id": "a",
+            "version": 1,
+            "data": {},
+            "occurred_at": "2026-01-01T00:00:00Z",
+        }
+    )
+    assert env.occurred_at is not None and env.occurred_at.year == 2026
+    with pytest.raises(ValidationError):
+        Envelope.model_validate(
+            {
+                "type": "order.updated",
+                "aggregate_id": "a",
+                "version": 1,
+                "data": {},
+                "occurred_at": "soon",
+            }
+        )
