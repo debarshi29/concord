@@ -97,6 +97,7 @@ def _cmd_sweep(args: argparse.Namespace, settings: Settings) -> int:
             "force_applied": result.force_applied,
             "purged": result.purged,
             "rejected_purged": result.rejected_purged,
+            "retention_purged": result.retention_purged,
         }
     )
     return 0
