@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import pytest
+
 from reconciler.clock import FakeClock
 from reconciler.context import AppContext
 from reconciler.processor import sweep
@@ -73,3 +75,17 @@ def test_stats_report_corrections_and_duplicate_effects(ctx: AppContext) -> None
                 "VALUES ('x', 1, gen_random_uuid(), now())"
             )
     assert collect_stats(ctx)["duplicate_effects"] == 1
+
+
+def test_alert_evaluation_does_not_run_the_full_stats_report(
+    ctx: AppContext, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The worker evaluates alerts every sweep; the report scans `events` and `effect_log`."""
+
+    def full_report(_: AppContext) -> dict[str, object]:
+        raise AssertionError("check_alerts must not call collect_stats")
+
+    monkeypatch.setattr("reconciler.stats.collect_stats", full_report)
+    send(ctx, data={"status": "banana"})
+    run_until_idle(ctx)
+    assert names(ctx) == ["dlq_depth"]
