@@ -123,7 +123,8 @@ header. Body:
 | `202` | Stored durably; processing is asynchronous |
 | `401` | Missing or invalid signature |
 | `400` | Body is not valid JSON |
-| `422` | Invalid envelope, or unsupported event type |
+| `422` | Invalid envelope (including values Postgres cannot store), or unsupported event type |
+| `413` | Body over `MAX_BODY_BYTES` (default 1 MiB); refused unread and not recorded |
 
 Every error carries a typed `error.code` and the id of the recorded event. Also available: `GET /healthz`,
 `GET /readyz`, `GET /stats`, `GET /alerts`. The machine-readable contract is [`docs/openapi.json`](docs/openapi.json),
@@ -156,6 +157,9 @@ All settings are environment variables prefixed `RECONCILER_`, validated at star
 | `GAP_POLICY` | `park_and_alert` | Or `last_writer_wins` |
 | `RETRY_BASE_SECONDS` / `RETRY_CAP_SECONDS` / `RETRY_MAX_ATTEMPTS` | 1 / 300 / 6 | Backoff and attempt budget |
 | `RECONCILE_SOURCE_URL` / `RECONCILE_INTERVAL_SECONDS` | unset / 900 | Enables the reconciler against a list endpoint |
+| `OPS_TOKEN` | unset | Bearer token required by `/stats` and `/alerts` when set |
+| `MAX_BODY_BYTES` | 1048576 | Largest accepted webhook body |
+| `REJECTED_RETENTION_SECONDS` | 604800 (7 days) | How long unauthenticated rejections are kept (stored truncated to 2 KiB) |
 | `OTEL_EXPORTER` | `none` | `console` or `otlp` (install the `otlp` extra) |
 
 The complete list is in [`docs/lld.md`](docs/lld.md#6-configuration-reconciler_-validated-at-boot-by-pydantic-settings).
@@ -221,7 +225,7 @@ Scripts: `make bench`, `make profile`. The flamegraph is
 - **Convergence after a lost event is not immediate.** It takes up to the gap window plus the reconcile interval
   (5 plus 15 minutes by default).
 - **A single hot aggregate is serialised** by its row lock, and ordering is per aggregate only.
-- **`/stats` and `/alerts` are unauthenticated.** Expose them on an internal network only.
+- **`/stats` and `/alerts` are open unless `OPS_TOKEN` is set.** With it set they require `Authorization: Bearer <token>`; without it, expose them on an internal network only (the API logs a warning at boot).
 - **No replay-attack window.** Signatures cover the body, not a timestamp.
 - **`events` is never trimmed.** There is no partitioning or retention yet; at 50 events/s, roughly 10 GB per day if
   every duplicate is kept.
