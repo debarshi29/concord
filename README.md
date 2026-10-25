@@ -237,7 +237,7 @@ Scripts: `make bench`, `make profile`. The flamegraph is
 ## Roadmap
 
 Transactional outbox for outbound publication · multi-source reconciliation with conflict policies · versioned event
-schemas with compatibility checks in CI · `events` partitioning and retention · authentication for the operational
+schemas with compatibility checks in CI · `events` partitioning · per-user authentication for the operational
 endpoints and a signed-timestamp replay window · nightly mutation testing of the Postgres-backed modules.
 
 ## Development

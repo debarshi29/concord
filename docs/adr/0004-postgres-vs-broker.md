@@ -21,7 +21,7 @@ effect record and the idempotency record commit or roll back together. No broker
 ## Consequences
 Easy: exactly-once effects with plain transactions; SQL for every operator question; embedded-Postgres tests.
 Hard: throughput ceiling in the low thousands/s on one primary; `events` table growth needs partitioning/retention
-(deferred); polling claim loop adds up to `poll_interval` latency. Reversibility: one-way-ish — moving the WAL to a
+(retention shipped in 1.1.0 as `RETENTION_SECONDS`; time partitioning is still deferred); polling claim loop adds up to `poll_interval` latency. Reversibility: one-way-ish — moving the WAL to a
 broker later changes ingestion semantics, but the pattern library's interfaces were written to make that swap local.
 
 ## Revisit criteria

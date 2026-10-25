@@ -23,12 +23,14 @@ reconciler stats             # events by status, dlq depth, buffer depth, duplic
 reconciler dlq list          # open dead-letter entries with attempts, last error, aggregate and version
 reconciler dlq redrive --all | --id <uuid>    # give dead events a fresh retry budget
 reconciler dlq discard --id <uuid>            # give up on one dead event (the reconciler heals the aggregate)
-reconciler sweep             # expire gap windows per policy, purge expired idempotency rows
+reconciler sweep             # expire gap windows per policy, purge expired idempotency rows, rejections and old history
 reconciler reconcile         # run one reconciliation pass now (needs RECONCILER_RECONCILE_SOURCE_URL)
 reconciler worker --until-idle   # drain everything due and exit
 ```
 
 Environment: `RECONCILER_DATABASE_URL` is required for every command. Full list: `docs/lld.md` §6.
+If `RECONCILER_OPS_TOKEN` is set, `/stats` and `/alerts` need `-H 'Authorization: Bearer <token>'`; `/healthz` and
+`/readyz` never do. The CLI reads the database directly and is unaffected.
 
 ## 2. First five minutes (any page)
 
@@ -104,6 +106,8 @@ every `SWEEP_INTERVAL_SECONDS`.)
      A spike in `invalid_signature` points at secret rotation (§8); `invalid_envelope` at a sender change.
   2. `select kind, count(*) from corrections where corrected_at > now() - interval '1 day' group by 1;`
      mostly `missing` ⇒ events never delivered (sender/network); mostly `divergent` ⇒ a handler bug — escalate.
+* `local_ahead` and `orphan` corrections are logged once per standing condition, not once per run, so a persistent
+  flag does not inflate `corrections_last_24h`; it is logged again if the aggregate is healed and later drifts again.
 * `local_ahead` corrections are flags, never overwrites: the replica has newer data than the source's list endpoint
   (usually a lagging source). `orphan` flags aggregates the source no longer lists.
 
@@ -132,7 +136,9 @@ An empty secret never validates (tested), and the API refuses to boot without on
 ## 9. Migrations and rollback
 
 * Migrations are **forward-only** and versioned (`src/reconciler/migrations/NNNN_*.sql`); `reconciler migrate` applies
-  pending ones under an advisory lock, so concurrent deploys are safe. Deploy the schema **before** the code that uses
+  pending ones under an advisory lock that is held until the migration has committed, so concurrent deploys are safe.
+  Each migration is its own transaction: if migration N fails, migrations before it stay applied, N leaves no trace,
+  the lock is released and a rerun retries N. Deploy the schema **before** the code that uses
   it (expand → migrate → contract).
 * **Rollback story**: restore from backup / point-in-time recovery to just before the migration, then redeploy the
   previous release. There is no down-migration. This procedure is **not drilled**: it depends on the managed
@@ -143,3 +149,24 @@ An empty secret never validates (tested), and the API refuses to boot without on
 Real database failover (§7), PITR restore (§9), a sink that performs a genuine external side effect (the sink runs
 inside the transaction; a real call there is at-least-once — the outbox extension closes it), and behaviour above
 ~600 events/s on a single node (see `bench/results/throughput.csv`).
+
+Also not load-tested: the retention sweep at production table sizes (it is batch-bounded, 5000 rows per table per
+sweep, so a large first-time backlog drains over many sweeps), and the `OPS_TOKEN` path beyond the integration tests
+and one manual run in the compose stack.
+
+## 11. Retention and storage
+
+* The sweep deletes finished history older than `RECONCILER_RETENTION_SECONDS` (default 30 days; `0` keeps everything):
+  `events`, `effect_log`, `corrections`, resolved `dlq` rows and old `reconcile_runs`. Unauthenticated rejections go
+  after `RECONCILER_REJECTED_RETENTION_SECONDS` (7 days). `reconciler sweep` prints how many rows each pass removed
+  (`purged`, `rejected_purged`, `retention_purged`).
+* Storage plateaus at roughly the retention window of traffic: about 10 GB per day at 50 events/s if every duplicate
+  is kept, so ~300 GB at 30 days. Shorten the window or partition `events` if that is too much.
+* Cost of the window: after it, a `duplicate_effects` audit can no longer see older effects, and a standing
+  `local_ahead` / `orphan` flag is logged once more when its old correction row ages out.
+* Nothing referenced or in flight is deleted (an event with an idempotency record, an open DLQ entry or a buffer row,
+  the latest reconcile run), so shortening the window below the idempotency TTL is safe; those events simply wait.
+* Backlog after enabling or shortening retention drains at 5000 rows per table per sweep (every 15 s by default).
+  To watch it: `select count(*) from events where received_at < now() - interval '30 days';`.
+* Oversized requests: bodies over `RECONCILER_MAX_BODY_BYTES` (1 MiB) get `413` unread and unrecorded, so a flood shows
+  in the API logs (`webhook body over limit`), not in the `events` table.
