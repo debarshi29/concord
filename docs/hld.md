@@ -27,7 +27,7 @@ flowchart LR
 | Component | Responsibility | Does **not** do |
 |---|---|---|
 | Ingestion API | verify signature, validate envelope, extract idempotency key, persist to `events` *before* ack, typed rejections | any business processing |
-| Worker | claim a `received` event, run the single processing transaction, schedule retries, route to DLQ | trust arrival order |
+| Worker | claim a `received` event, run the single processing transaction, schedule retries, route to DLQ; sweep expired windows and trim history | trust arrival order |
 | Pattern library (`reconciler.patterns`) | `ordering.decide`, `RetryPolicy`, idempotency store, DLQ ops — imported by P3/P7/P8 | know about orders |
 | Domain (`reconciler.domain`) | validate + apply an `order.updated` patch | touch the DB |
 | Reconciler | compare local aggregates to the source's list endpoint, heal drift, log every correction | run on the hot path |
@@ -36,14 +36,19 @@ flowchart LR
 ## 3. Data flow
 
 1. **Ingest.** Verify HMAC → parse envelope → derive key → `INSERT INTO events` → commit → `202`.
-   Invalid events are inserted with `status='rejected'` and a typed reason, and answered `401/422`.
+   Invalid events are inserted with `status='rejected'` and a typed reason, and answered `401/400/422`; a body over
+   1 MiB is answered `413` unread and not recorded.
 2. **Process** (one transaction, `FOR UPDATE SKIP LOCKED` claim, aggregate row lock):
    idempotency lookup → version decision (apply / buffer / stale) → state change + `effect_log` +
    idempotency record → drain any buffered successors.
 3. **Fail.** Retryable error → savepoint rolled back, `attempts+1`, `next_attempt_at = now + backoff(jitter)`.
    Terminal error or budget exhausted → `dlq` row + alert condition.
 4. **Reconcile.** Every `reconcile_interval`, page the source, and for each aggregate whose local
-   `(version, state)` differs, overwrite from the source and write a `corrections` row.
+   `(version, state)` differs, overwrite from the source and write a `corrections` row. This runs on its own
+   thread, so a slow source never delays step 2.
+5. **Housekeep.** Every `sweep_interval` the worker parks or force-applies expired gap windows, deletes expired
+   idempotency records and old unauthenticated rejections, and trims finished history past `RETENTION_SECONDS`
+   (detail: LLD §3.4).
 
 ## 4. Key decisions (full ADRs in `adr/`)
 
@@ -83,7 +88,7 @@ These are the *design targets*; measured values are in the README and `bench/res
 
 The latency measurement is a single sequential client, so it says nothing about tail behaviour under concurrent
 load. The throughput plateau beyond 2 workers is round-trip bound, not CPU bound in our code: the profile puts
-93 % of time in the psycopg driver and 5 % in our own code (`bench/results/profile_summary.txt`, ADR-0005).
+92 % of time in the psycopg driver and 5.5 % in our own code (`bench/results/profile_summary.txt`, ADR-0005).
 
 ### 5.2 Envelope
 

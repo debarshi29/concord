@@ -77,8 +77,8 @@ laptop with an embedded database; the ceiling is the single primary, and the nex
 `events` or moving the write-ahead log to a broker.*
 
 **Q10. Why Python and not Rust/Go?** (ADR-0005)
-The hard part is transaction semantics, not CPU. I profiled with py-spy (including idle samples): **93.4 %** of a
-worker's time is inside the psycopg driver (round-trips to Postgres) and **5.2 %** is my code, pydantic and JSON. My
+The hard part is transaction semantics, not CPU. I profiled with py-spy (including idle samples): **92.4 %** of a
+worker's time is inside the psycopg driver (round-trips to Postgres) and **5.5 %** is my code, pydantic and JSON. My
 own threshold for a rewrite was 30 %, so Python stays. Writing down the criterion *before* measuring is what makes
 the decision defensible.
 
@@ -155,7 +155,7 @@ inside the transaction and asserts nothing was half-applied and the event finish
 **Q23. What are the numbers?**
 Single laptop, embedded Postgres: ack latency p95 2.4 ms; processing 314 / 547 / 552 / 512 events/s at 1 / 2 / 4 / 8
 workers. These are evidence for the NFR table, not a capacity promise. The plateau past 2 workers is round-trip bound:
-the profile puts 93 % of time in the psycopg driver and 5 % in our code, so a rewrite would not move it (ADR-0005);
+the profile puts 92 % of time in the psycopg driver and 5.5 % in our code, so a rewrite would not move it (ADR-0005);
 batching claims would, and the revisit criteria (ADR-0004) are far away.
 
 **Q24. How would it scale 10×?**
