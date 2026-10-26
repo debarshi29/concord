@@ -76,8 +76,8 @@ These are the *design targets*; measured values are in the README and `bench/res
 
 | Dimension | Target | Measured |
 |---|---|---|
-| Ingestion ack latency p50 / p95 / p99 | 10 / 50 / 150 ms | 2.1 / 2.6 / 2.9 ms (sequential, real HTTP) |
-| Sustained / burst processing | 50 / 500 events/s | 259 events/s on 1 worker; 512 / 579 / 532 on 2 / 4 / 8 |
+| Ingestion ack latency p50 / p95 / p99 | 10 / 50 / 150 ms | 1.6 / 2.4 / 3.0 ms (sequential, real HTTP) |
+| Sustained / burst processing | 50 / 500 events/s | 314 events/s on 1 worker; 547 / 552 / 512 on 2 / 4 / 8 |
 | Chaos convergence | 100 % | 1 000 / 1 000 hostile, 1 000 / 1 000 mild |
 | Duplicate effects | 0 | 0 |
 

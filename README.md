@@ -213,8 +213,8 @@ as indicative, not as capacity guarantees.
 
 | Metric | Result |
 |---|---|
-| HTTP acknowledgement latency, p50 / p95 / p99 | 2.1 / 2.6 / 2.9 ms (sequential client) |
-| Processing throughput, 1 / 2 / 4 / 8 workers | 259 / 512 / 579 / 532 events/s |
+| HTTP acknowledgement latency, p50 / p95 / p99 | 1.6 / 2.4 / 3.0 ms (sequential client) |
+| Processing throughput, 1 / 2 / 4 / 8 workers | 314 / 547 / 552 / 512 events/s |
 | Worker time spent in the Postgres driver / in this code | 93.4% / 5.2% |
 
 Scripts: `make bench`, `make profile`. The flamegraph is

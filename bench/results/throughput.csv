@@ -1,9 +1,9 @@
 metric,variant,n,value
-http_ack_latency_ms,p50,1000,2.13
-http_ack_latency_ms,p95,1000,2.62
-http_ack_latency_ms,p99,1000,2.91
-http_ack_latency_ms,mean,1000,2.22
-processing_events_per_s,1_workers,3000,258.5
-processing_events_per_s,2_workers,3000,511.9
-processing_events_per_s,4_workers,3000,578.8
-processing_events_per_s,8_workers,3000,532.0
+http_ack_latency_ms,p50,1000,1.57
+http_ack_latency_ms,p95,1000,2.39
+http_ack_latency_ms,p99,1000,3.04
+http_ack_latency_ms,mean,1000,1.66
+processing_events_per_s,1_workers,3000,313.5
+processing_events_per_s,2_workers,3000,547.1
+processing_events_per_s,4_workers,3000,551.6
+processing_events_per_s,8_workers,3000,511.6
