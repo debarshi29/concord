@@ -22,4 +22,6 @@ jobs:
       - uses: softprops/action-gh-release@v3
         with:
           body_path: release_notes.md
-          files: dist/*
+          files: |
+            dist/*.whl
+            dist/*.tar.gz
