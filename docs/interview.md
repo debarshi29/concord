@@ -115,7 +115,7 @@ harness checks *delivery semantics*, not the domain logic against itself.
 **Q16. Coverage is 97 %. Is that enough?**
 Coverage only says what executed. I also ran mutation testing (cosmic-ray) over the pure decision modules: the first
 run killed **81.5 %** of mutants, exposing real gaps — my property test almost never hit the `current + 1` boundary
-because it drew `event` independently of `current`. After fixing the tests: **181/182 (99.5 %)**, 13 equivalent mutants
+because it drew `event` independently of `current`. After fixing the tests: **181/182 (99.5 %)** (182/183 after the 1.1.0 changes), 13 equivalent mutants
 skipped with justified pragmas, and the one survivor argued equivalent in `docs/mutation.md`. I did not mutation-test
 the Postgres-backed modules (≈ an hour per pass); those are pinned by the chaos and sensitivity tests.
 
@@ -154,20 +154,21 @@ inside the transaction and asserts nothing was half-applied and the event finish
 
 **Q23. What are the numbers?**
 Single laptop, embedded Postgres: ack latency p95 2.4 ms; processing 314 / 547 / 552 / 512 events/s at 1 / 2 / 4 / 8
-workers. These are evidence for the NFR table, not a capacity promise; I did not chase the plateau because the
-revisit criteria (ADR-0004) are far away.
+workers. These are evidence for the NFR table, not a capacity promise. The plateau past 2 workers is round-trip bound:
+the profile puts 93 % of time in the psycopg driver and 5 % in our code, so a rewrite would not move it (ADR-0005);
+batching claims would, and the revisit criteria (ADR-0004) are far away.
 
 **Q24. How would it scale 10×?**
 Add workers first (share-nothing, correctness independent of count). Then partition `events` by hash of
-`aggregate_id` with one claim loop per partition, add retention/partitioning for `events` (≈ 10 GB/day at 50 ev/s if
-every duplicate is retained), and only then consider moving the write-ahead log to a broker — accepting that the
+`aggregate_id` with one claim loop per partition, partition `events` by time (retention exists: 30 days by default, but ≈ 10 GB/day at 50 ev/s
+still means ~300 GB resident if every duplicate is kept), and only then consider moving the write-ahead log to a broker — accepting that the
 atomic "apply + commit" would need an outbox/inbox design.
 
 ## F. Trade-offs, mistakes, and what I'd change
 
 **Q25. What is it deliberately bad at?**
 Low-latency convergence after a *lost* event (up to window + reconcile interval); a hot aggregate (row lock); cross-
-aggregate invariants; unauthenticated ops endpoints; replay-attack protection (no signed timestamp window); and
+aggregate invariants; ops endpoints that are open unless a single bearer token is configured; replay-attack protection (no signed timestamp window); and
 exactly-once for *external* side effects. All listed in the README with the extension that fixes each.
 
 **Q26. Tell me about a mistake you made and how you caught it.**
@@ -179,7 +180,7 @@ because the system was right.
 
 **Q27. If you had another week?**
 (1) Outbox for outbound publication so external effects are exactly-once too; (2) nightly mutation testing of
-`processor.py`; (3) `events` partitioning + retention; (4) signed-timestamp replay window and auth on the ops endpoints.
+`processor.py`; (3) `events` time partitioning; (4) signed-timestamp replay window and per-user auth on the ops endpoints.
 I'd do (1) first because it removes the one place the headline claim has an asterisk.
 
 ## G. Curveballs
@@ -194,3 +195,18 @@ lock the aggregate-row lock and version check make the second apply a no-op (`st
 **Q30. What if the reconciler's source is itself wrong or stale?** It never overwrites a *newer* local aggregate
 (`local_ahead` is flagged, not applied) and never deletes aggregates the source stops listing (`orphan` is flagged).
 Healing only moves a replica forward to the source's version or fixes same-version divergence.
+
+**Q31. You shipped 1.0.0 with 97 % coverage, 99.5 % mutation kill rate and a chaos harness. What did a code review find?**
+Ten real defects. The worst three lost or mangled valid events: an ISO-8601 `occurred_at` made the strict envelope
+reject the event with a 422, so the sender stopped retrying; a non-ASCII `X-Signature` raised `TypeError` and returned
+500 without recording the request; and a signed body containing `\u0000`, a lone surrogate or `1e999` passed
+validation but failed the Postgres insert, so the sender retried forever. Also: the migration lock was released before
+the transaction committed, reconcile re-logged standing flags every run and flagged mid-run aggregates as orphans,
+reconcile ran inside the worker loop, unauthenticated bodies were unbounded, and alerts ran a full-table report every
+15 s. **Why the suite missed them:** every metric measures the tests against inputs *I imagined*. The chaos harness
+generates hostile *delivery schedules*, not hostile *bytes*; coverage and mutation score say nothing about inputs
+nobody wrote. **What I changed:** a property test that throws arbitrary header text and arbitrary signed envelopes (all
+code points) at ingest and asserts one recorded row per call, a concurrency test for the migrator, and a rule that a
+reviewed fix needs a test that fails on the old code (I checked each does). *Probe: "how did you know the claim-index
+finding was real?" I did not take it on trust: my first benchmark showed no difference, the second, with processed
+history ahead of the backlog, showed 14.9 ms against 0.075 ms, and the mechanism differed from the review's.*

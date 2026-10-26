@@ -13,8 +13,8 @@ test (`tests/integration/test_openapi_contract.py`) fails if it drifts from the 
 | 202 | – | durably stored; processing is asynchronous | `events.status='received'` | stop retrying |
 | 401 | `missing_signature` | no `X-Signature` | yes, `rejected` | fix config |
 | 401 | `invalid_signature` | HMAC mismatch (current or previous secret) | yes, `rejected` | fix secret / do not retry as-is |
-| 400 | `malformed_json` | body is not JSON | yes, `rejected` | fix payload |
-| 422 | `invalid_envelope` | envelope schema violated (`error.detail` lists fields) | yes, `rejected` | fix payload |
+| 400 | `malformed_json` | body is not JSON (including `NaN` / `Infinity`) | yes, `rejected` | fix payload |
+| 422 | `invalid_envelope` | envelope schema violated (`error.detail` lists fields), or a value Postgres cannot store | yes, `rejected` | fix payload |
 | 422 | `unsupported_event_type` | `type` is not `order.updated` | yes, `rejected` | stop sending |
 | 413 | `payload_too_large` | body over `MAX_BODY_BYTES` | **no**: refused unread, so an anonymous flood cannot fill the table | send less |
 
@@ -32,7 +32,12 @@ committed. Other endpoints: `GET /healthz` (liveness), `GET /readyz` (`SELECT 1`
 | `aggregate_id` | string | 1–128 chars |
 | `version` | integer (strict) | 1 … 2 000 000 000; dense and monotonic per aggregate |
 | `data` | object | validated by the **domain handler**, not the boundary |
-| `occurred_at` | datetime, optional | informational |
+| `occurred_at` | datetime, optional | informational; an ISO-8601 string is accepted (this one field is not strict), anything unparsable is `invalid_envelope` |
+
+Values Postgres cannot store are refused at the boundary rather than failing the insert: a NUL, a lone surrogate or a
+non-finite number anywhere in the envelope is `invalid_envelope`, and `NaN` / `Infinity` literals are `malformed_json`
+(they are not JSON). Whatever bytes arrive, an ingest call either accepts or leaves exactly one typed `rejected` row
+(`tests/property/test_ingest_fuzz.py`); the sole exception is `413`.
 
 Boundary vs. domain validation is deliberate: a schema-valid event with business-invalid `data` (a *poison*
 message) is accepted, stored and dead-lettered with full context rather than refused where nobody can inspect it.
@@ -94,7 +99,10 @@ erDiagram
         jsonb after }
 ```
 
-Schema source of truth: `src/reconciler/migrations/0001_init.sql` (forward-only; see runbook §9).
+Schema source of truth: `src/reconciler/migrations/` (forward-only; see runbook §9): `0001_init.sql` the tables,
+`0002_claim_index.sql` a partial index on `events (seq) WHERE status = 'received'` so a claim never walks processed
+history (200 000 processed rows ahead of the backlog: 14.9 ms to 0.075 ms), `0003_retention_indexes.sql` the age
+indexes the retention batches order by.
 `effect_log` has **no unique constraint** on `(aggregate_id, version)` on purpose: the duplicate-effect metric is
 `count(*) − count(distinct (aggregate_id, version))`, which must be a measurement, not an exception.
 
@@ -197,8 +205,32 @@ sequenceDiagram
             R->>P: drain buffer only
         end
     end
-    R->>P: flag aggregates the source no longer lists (kind=orphan) / INSERT reconcile_runs
+    R->>P: flag aggregates the source no longer lists and untouched since the run began (kind=orphan) / INSERT reconcile_runs
 ```
+
+`local_ahead` and `orphan` are standing conditions, so they are logged once: a new row is written only if the
+aggregate's latest correction is not already of that kind (reports still count them every run). The orphan scan skips
+aggregates created or advanced after the run started, because the source listing was paged over minutes and may predate
+them.
+
+### 3.4 Worker loop, sweep and retention
+
+`worker` runs two threads. The **processing loop** claims and processes events and, every `SWEEP_INTERVAL_SECONDS`,
+runs `sweep` and evaluates alerts. The **reconcile loop** (only when `RECONCILE_SOURCE_URL` is set) runs `reconcile`
+every `RECONCILE_INTERVAL_SECONDS` and logs and retries failures, so a slow or hung source cannot stall claims, gap
+sweeps or alerts; the two are safe together because both lock the aggregate row. Shutdown sets one stop event; the
+reconcile thread is joined with a 30 s bound.
+
+`sweep` is one transaction, in this order: (1) expired gap windows become `parked` (`park_and_alert`) or are
+force-applied (`last_writer_wins`); (2) expired idempotency records are deleted; (3) unauthenticated `rejected` rows
+older than `REJECTED_RETENTION_SECONDS` are deleted; (4) `purge_history` deletes finished `events`, `effect_log`,
+`corrections`, resolved `dlq` and old `reconcile_runs` past `RETENTION_SECONDS`, at most 5000 rows per table per call.
+Step 2 runs before step 4 because an event referenced by an idempotency record is kept until the record expires.
+Never deleted by retention: events with an idempotency record, an open DLQ entry or a buffer row; events not yet in a
+final state; the latest `reconcile_runs` row (the `reconcile_stale` alert reads it); `aggregates`.
+
+`check_alerts` reads four indexed values (`stats._alert_inputs`) rather than the full `/stats` report, which scans
+`events` and `effect_log` and is for humans.
 
 ## 4. Invariants (each is enforced by a named test)
 
@@ -214,6 +246,10 @@ sequenceDiagram
 | I8 | Exactly one effect per `(aggregate, version)` regardless of worker count | `test_shuffled_stream_with_duplicates_converges_under_concurrency` |
 | I9 | After chaos + time + one reconcile pass, state equals perfect in-order exactly-once delivery | `test_chaos_converges_*`, `bench/chaos_run.py` (1000 permutations) |
 | I10 | The chaos harness can fail | `tests/property/test_harness_sensitivity.py` |
+| I11 | Any header and body bytes either accept or leave exactly one typed rejected row (never a 500) | `tests/property/test_ingest_fuzz.py` |
+| I12 | Concurrent migrators apply each migration once; a failing migration keeps its predecessors | `test_concurrent_migrators_apply_each_migration_exactly_once`, `test_a_failing_migration_keeps_the_ones_before_it` |
+| I13 | Retention never deletes anything still referenced or in flight | `tests/integration/test_retention.py` |
+| I14 | Reconcile processing continues while the source is stalled | `test_a_stalled_reconcile_does_not_stall_event_processing` |
 
 ## 5. Locking and isolation
 
@@ -221,7 +257,9 @@ Order of acquisition, in every code path: **event row** (`FOR UPDATE SKIP LOCKED
 (`FOR UPDATE`) → **buffered event rows of that aggregate** (`FOR UPDATE OF e`). Workers only *claim* events with
 status `received`; buffered/parked rows are touched only by whoever holds the aggregate lock, so there is no lock
 cycle. Default isolation (read committed) is sufficient because every decision is made while holding the aggregate
-row lock. The reconciler takes the same aggregate lock per aggregate, in its own short transaction.
+row lock. The reconciler takes the same aggregate lock per aggregate, in its own short transaction, on its own thread.
+`migrate` holds a session advisory lock on an autocommit connection, so the lock outlives only committed work and
+each migration is a real transaction.
 
 ## 6. Configuration (`RECONCILER_*`, validated at boot by `pydantic-settings`)
 

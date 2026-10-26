@@ -72,7 +72,7 @@ These are the *design targets*; measured values are in the README and `bench/res
 | Consistency | per-aggregate sequential; replica ≡ source within one reconcile interval (default 15 min) |
 | Correctness | duplicate effects = 0; chaos convergence = 100 % |
 
-**Measured (v1.0.0, developer laptop, embedded Postgres 16 — `bench/results/`)**
+**Measured (v1.1.0, developer laptop, embedded Postgres 16 — `bench/results/`)**
 
 | Dimension | Target | Measured |
 |---|---|---|
@@ -82,7 +82,8 @@ These are the *design targets*; measured values are in the README and `bench/res
 | Duplicate effects | 0 | 0 |
 
 The latency measurement is a single sequential client, so it says nothing about tail behaviour under concurrent
-load; the throughput plateau at ~4 workers was not investigated.
+load. The throughput plateau beyond 2 workers is round-trip bound, not CPU bound in our code: the profile puts
+93 % of time in the psycopg driver and 5 % in our own code (`bench/results/profile_summary.txt`, ADR-0005).
 
 ### 5.2 Envelope
 
@@ -90,7 +91,7 @@ load; the throughput plateau at ~4 workers was not investigated.
   with indexes if every duplicate is retained → `events` needs a 30-day retention job and time partitioning
   beyond ~1 M events/day (v1.1 ships the retention job, `RETENTION_SECONDS`; partitioning remains an extension).
 * Idempotency table: one row per applied event, ~150 B; 7 days × 4.3 M ≈ 30 M rows ≈ 4.5 GB worst case.
-* Workers: processing is a few round-trips; **measured ≈ 260 ev/s per worker** (the estimate made before building
+* Workers: processing is a few round-trips; **measured ≈ 310 ev/s per worker** (the estimate made before building
   was 100–200). Peak 500 ev/s ⇒ 2–3 workers; average load needs 1.
 * **Scale ceiling**: single Postgres primary ≈ low thousands of events/s. Next design: partition `events`
   by `hash(aggregate_id)`, one claim loop per partition, or move the WAL to a log broker (ADR-0004 revisit).
@@ -108,6 +109,10 @@ load; the throughput plateau at ~4 workers was not investigated.
 | Sender | event never delivered | reconciler correction count | replica drifts | reconciler heals | no (trend alert) |
 | Sender | version gap that never fills | `parked_events` alert | aggregate stalls | reconciler heals, drains buffer | on parked alert |
 | Reconciler | source list endpoint down | job error log, `last_reconcile_age` alert | drift persists | retry next interval | on age alert |
+| Ingestion API | flood of unsigned or oversized bodies | `413` rate, `rejected` row count | memory and disk pressure | body cap (1 MiB, refused unread), rejections stored truncated and purged after 7 days | no |
+| Migrator | two replicas start together | none needed | would double-run a migration | advisory lock held until the migration commits; each migration is its own transaction | no |
+| Worker | reconcile source slow or hung | `reconcile_stale` alert | drift persists; processing unaffected | reconcile runs on its own thread, bounded by the source's HTTP timeout | on age alert |
+| Postgres | tables grow without bound | storage alerts of the platform | disk fills | `RETENTION_SECONDS` sweep (30 days) in bounded batches | platform |
 | Clock skew | worker vs DB | n/a — all times come from the app clock passed into SQL | backoff drifts only | NTP | no |
 
 ### 5.4 Top three trade-offs (mini-ADRs)
